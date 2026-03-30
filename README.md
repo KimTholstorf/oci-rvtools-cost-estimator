@@ -1,13 +1,13 @@
 <div align="center">
   <img src="logo_gh.png" width="345" height="93" alt="Logo"/>
-  <h4 align="center">Turn RVTools exports into an Oracle Cloud monthly cost estimate</h4>
+  <h4 align="center">Turn VMware RVTools exports into an Oracle Cloud monthly cost estimate</h4>
 </div>
 
 <br>
     
-This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle Cloud Infrastructure list prices, and produces an Excel workbook with aggregate monthly costs for all included resources. 
+This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle Cloud Infrastructure prices, and generates an Excel workbook with aggregate monthly costs for all included resources. 
 
-Because OCI pricing scales linearly it It doesn’t price individual VMs. Instead it calculates the cost of a hypothetical single VM whose vCPU, RAM, and disk match the combined totals of the ingested workloads. That aggregated cost is identical to summing the per-VM prices, but a lot just easier to understand and calculate 🤓.
+Because OCI pricing scales linearly `oci-rvtools` doesn’t price individual VMs. Instead it calculates the cost of a hypothetical single VM whose vCPU, RAM, and disk match the combined totals of the ingested workloads. That aggregated cost is identical to summing the per-VM prices, but a lot just easier to calculate and present 🤓.
 
 ---
 
@@ -25,50 +25,55 @@ Because OCI pricing scales linearly it It doesn’t price individual VMs. Instea
 ## ⚡ Quick start
 
 ```bash
-# 1) Set up a virtual environment (optional but recommended)
-python3 -m venv .venv
-source .venv/bin/activate
+# Install from PyPI
+pip install oci-rvtools
 
-# 2) Install dependencies
-pip install pandas openpyxl
-
-# 3) Run the estimator
-python oci-rvtools-cost-estimator.py \
+# Run the estimator
+oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \
   --output oci_cost_summary.xlsx
 ```
 
-The script contacts the OCI pricing API at runtime. Ensure the machine has outbound internet access.
+The tool contacts the OCI pricing API at runtime. Ensure the machine has outbound internet access.
 
 ---
 
 ## 🏗️ Installation options
 
-### Local Python environment
+### PyPI (recommended)
 
-Requirements:
-- Python 3.9+
-- `pandas`
-- `openpyxl`
+```bash
+pip install oci-rvtools
+```
+
+This installs the `oci-rvtools` command globally (or into your active virtual environment).
+
+### pipx (isolated install)
+
+```bash
+pipx install oci-rvtools
+```
+
+[pipx](https://pipx.pypa.io) installs the tool in its own isolated environment and makes the command available system-wide without affecting other Python packages.
+
+### From source
 
 ```bash
 git clone https://github.com/KimTholstorf/oci-rvtools-cost-estimator.git
 cd oci-rvtools-cost-estimator
 python3 -m venv .venv
 source .venv/bin/activate
-pip install pandas openpyxl
+pip install .
 ```
-
-You can also use [uv](https://github.com/astral-sh/uv) or `pipx` to keep dependencies isolated.
 
 ### One-off execution with uv
 
 ```bash
-uv run --with pandas --with openpyxl oci-rvtools-cost-estimator.py \
+uvx oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx
 ```
 
-`uv` downloads dependencies into a cache and runs the script without a virtual environment.
+`uv` downloads the package into a cache and runs it without a permanent install.
 
 ---
 
@@ -124,22 +129,22 @@ Paths can point to folders; the script recursively picks up `.xlsx` files (skipp
 
 ```bash
 # Baseline run (powered-on VMs only, powered-off disks included)
-python oci-rvtools-cost-estimator.py \
+oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx
 
 # Aggregate multiple exports and change output name
-python oci-rvtools-cost-estimator.py \
+oci-rvtools \
   --rvtools ./customer/site-a.xlsx ./customer/site-b.xlsx \
   --output reports/oci_cost_summary.xlsx
 
 # Include powered-off VM CPU/RAM and exclude their disks
-python oci-rvtools-cost-estimator.py \
+oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \
   --include-poweredoff-vms \
   --exclude-poweredoff-disks
 
 # Override pricing part numbers and hours per month
-python oci-rvtools-cost-estimator.py \
+oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \
   --hours 744 \
   --ocpu-part B12345 \
@@ -148,18 +153,10 @@ python oci-rvtools-cost-estimator.py \
   --vpu-part B09876
 
 # Cap VPU to 120 automatically; explicit value of 0 becomes 1
-python oci-rvtools-cost-estimator.py \
+oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \
   --vpu 0   # silently treated as 1
 ```
-
----
-
-## 🧪 Testing hints
-
-- Use `uv run --with pandas --with openpyxl` to execute without polluting a local environment.
-- For offline validation, mock the Oracle pricing API response by monkeypatching `PricingClient.get_price`.
-- Compare VM counts with RVTools (`Powerstate == poweredOn`) to confirm aggregation behaviour.
 
 ---
 

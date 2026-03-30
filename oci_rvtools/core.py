@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 OCI Monthly Cost Calculator (direct RVTools input)
 
@@ -26,23 +25,38 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 
-VERSION = "1.0.6"
+
+# =========================
+# Version
+# =========================
+
+VERSION = "1.0.7"
 
 
 # =========================
-# Logging helpers
+# CLI Defaults
 # =========================
 
-def info(msg: str) -> None:
-    print(f"[INFO] {msg}")
-
-
-def warn(msg: str) -> None:
-    print(f"[WARN] {msg}")
+DEFAULT_INPUT = ""  # unused placeholder
+DEFAULT_OUTPUT = "oci_cost_summary.xlsx"
+DEFAULT_CURRENCY = "USD"
+DEFAULT_HOURS = 730
+DEFAULT_OCPU_PART = "B97384"
+DEFAULT_MEMORY_PART = "B97385"
+DEFAULT_STORAGE_PART = "B91961"
+DEFAULT_VPU_PART = "B91962"
+DEFAULT_VPU = 10.0
 
 
 # =========================
-# Canonicalization metadata
+# API
+# =========================
+
+API_BASE = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
+
+
+# =========================
+# vInfo Column Mapping
 # =========================
 
 CANON_COLS_VINFO = [
@@ -104,6 +118,63 @@ NUMERIC_PREFERRED_VINFO = {
 }
 
 INVALID_CLUSTER_VALUES = {"", "none", "nan", "unknown"}
+
+
+# =========================
+# Unit Conversion
+# =========================
+
+MIB_TO_GB = 1024.0 / 953_674.0  # RVTools MiB -> TiB -> GB conversion factor
+
+
+# =========================
+# Excel Layout
+# =========================
+
+TABLE_COLUMN_COUNT = 7
+EXCEL_HEADERS = [
+    "Description",
+    "Part Number",
+    "Part Qty",
+    "Instance Qty",
+    "Usage Qty",
+    "Unit Price ({currency})",
+    "Monthly Cost ({currency})",
+]
+COLUMN_WIDTHS = {
+    "A": 36,
+    "B": 16,
+    "C": 16,
+    "D": 16,
+    "E": 16,
+    "F": 16,
+    "G": 16,
+}
+TITLE_ROW_HEIGHT = 40
+HEADER_ROW_HEIGHT = 40
+DEFAULT_ROW_HEIGHT = 20
+DISCLAIMER_ROW_HEIGHT = 80
+
+
+# =========================
+# Excel Styles
+# =========================
+
+TITLE_FONT = Font(bold=True, size=14)
+HEADER_FILL = PatternFill(start_color="FFDCE6F1", end_color="FFDCE6F1", fill_type="solid")
+DISCLAIMER_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
+
+
+# =========================
+# Logging helpers
+# =========================
+
+def info(msg: str) -> None:
+    print(f"[INFO] {msg}")
+
+
+def warn(msg: str) -> None:
+    print(f"[WARN] {msg}")
 
 
 # =========================
@@ -210,9 +281,6 @@ def load_vinfo_dataframe(filepath: Path) -> Optional[pd.DataFrame]:
 # =========================
 # Aggregation from vInfo
 # =========================
-
-MIB_TO_GB = 1024.0 / 953_674.0  # RVTools MiB -> TiB -> GB conversion factor
-
 
 def _valid_cluster(value: object) -> bool:
     if pd.isna(value):
@@ -330,157 +398,6 @@ def aggregate_from_rvtools(
 # =========================
 # Pricing client
 # =========================
-
-DEFAULT_INPUT = ""  # unused placeholder
-DEFAULT_OUTPUT = "oci_cost_summary.xlsx"
-DEFAULT_CURRENCY = "USD"
-DEFAULT_HOURS = 730
-DEFAULT_OCPU_PART = "B97384"
-DEFAULT_MEMORY_PART = "B97385"
-DEFAULT_STORAGE_PART = "B91961"
-DEFAULT_VPU_PART = "B91962"
-DEFAULT_VPU = 10.0
-
-API_BASE = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
-
-TABLE_COLUMN_COUNT = 7
-EXCEL_HEADERS = [
-    "Description",
-    "Part Number",
-    "Part Qty",
-    "Instance Qty",
-    "Usage Qty",
-    "Unit Price ({currency})",
-    "Monthly Cost ({currency})",
-]
-COLUMN_WIDTHS = {
-    "A": 36,
-    "B": 16,
-    "C": 16,
-    "D": 16,
-    "E": 16,
-    "F": 16,
-    "G": 16,
-}
-TITLE_ROW_HEIGHT = 40
-HEADER_ROW_HEIGHT = 40
-DEFAULT_ROW_HEIGHT = 20
-DISCLAIMER_ROW_HEIGHT = 80
-TITLE_FONT = Font(bold=True, size=14)
-HEADER_FILL = PatternFill(start_color="FFDCE6F1", end_color="FFDCE6F1", fill_type="solid")
-DISCLAIMER_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
-
-
-def build_metadata_rows(metadata: Dict[str, object]) -> List[Tuple[str, str, str]]:
-    return [
-        ("Source Files", metadata["source_files"], ""),
-        ("Hours per Month", metadata["hours_per_month"], ""),
-        ("Currency", metadata["currency"], ""),
-        ("VPU", metadata["vpu"], ""),
-        ("Powered On VMs", str(metadata["powered_on_vms"]), "(included)"),
-        (
-            "Powered Off VMs",
-            str(metadata["powered_off_vms"]),
-            "(included)" if metadata["powered_off_included"] else "(excluded)",
-        ),
-        (
-            "Powered Off Disks",
-            "",
-            "(included)" if metadata["powered_off_disks_included"] else "(excluded)",
-        ),
-    ]
-
-
-def apply_column_widths(ws) -> None:
-    for column, width in COLUMN_WIDTHS.items():
-        ws.column_dimensions[column].width = width
-
-
-def write_metadata(ws, rows: List[Tuple[str, str, str]], start_row: int = 2) -> int:
-    row = start_row
-    for title, value, status in rows:
-        ws.cell(row=row, column=1, value=title)
-        ws.cell(row=row, column=2, value=value)
-        if status:
-            ws.cell(row=row, column=3, value=status)
-        row += 1
-    return row - 1
-
-
-def format_row(ws, row: int, *, bold: bool = False, vertical: str = "bottom") -> None:
-    for col_idx in range(1, TABLE_COLUMN_COUNT + 1):
-        cell = ws.cell(row=row, column=col_idx)
-        if bold:
-            cell.font = Font(bold=True)
-        cell.alignment = Alignment(horizontal="left", vertical=vertical)
-
-
-def format_metadata_block(ws, start_row: int, end_row: int) -> None:
-    for row in range(start_row, end_row + 1):
-        format_row(ws, row)
-    format_row(ws, start_row, bold=True)
-
-
-def format_table_header(ws, header_row: int, headers: List[str]) -> None:
-    for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=header_row, column=col_idx, value=header)
-        cell.font = Font(bold=True)
-        cell.alignment = Alignment(horizontal="left", vertical="center")
-        cell.fill = HEADER_FILL
-
-
-def format_data_rows(ws, start_row: int, end_row: int) -> None:
-    for row in range(start_row, end_row):
-        format_row(ws, row)
-
-
-def format_total_row(ws, total_row: int) -> None:
-    format_row(ws, total_row, bold=True)
-
-
-def apply_row_heights(
-    ws,
-    metadata_end_row: int,
-    blank_row_index: int,
-    header_row: int,
-    data_start: int,
-    total_row: int,
-    disclaimer_row: int,
-) -> None:
-    ws.row_dimensions[1].height = TITLE_ROW_HEIGHT
-    for row in range(2, metadata_end_row + 1):
-        ws.row_dimensions[row].height = DEFAULT_ROW_HEIGHT
-    ws.row_dimensions[blank_row_index].height = DEFAULT_ROW_HEIGHT
-    ws.row_dimensions[header_row].height = HEADER_ROW_HEIGHT
-    for row in range(data_start, total_row + 1):
-        ws.row_dimensions[row].height = DEFAULT_ROW_HEIGHT
-    quote_row = disclaimer_row - 2
-    if quote_row >= 2:
-        ws.row_dimensions[quote_row].height = DEFAULT_ROW_HEIGHT
-    ws.row_dimensions[disclaimer_row].height = DISCLAIMER_ROW_HEIGHT
-
-
-def append_advisory(ws, total_row: int) -> Tuple[int, int]:
-    quote_row = total_row + 3
-    quote_cell = ws.cell(row=quote_row, column=1, value="Quote is for investment proposal only.")
-    quote_cell.font = Font(bold=True, color="00FF0000")
-    ws.merge_cells(start_row=quote_row, start_column=1, end_row=quote_row, end_column=TABLE_COLUMN_COUNT)
-
-    disclaimer_row = quote_row + 2
-    disclaimer_text = (
-        "Disclaimer:  This sample quote is provided solely for evaluation purposes and is intended to further "
-        "discussions between you and Oracle.  This sample quote is not eligible for acceptance by you and is "
-        "not a binding contract between you and Oracle for the services specified.  If you would like to purchase "
-        "the services specified in this sample quote, please request that Oracle issue you a formal quote (which "
-        "may include an OMA or a CSA if you do not already have an appropriate agreement in place with Oracle) "
-        "for your acceptance and execution.  Your formal quote will be effective only upon Oracle's acceptance "
-        "of the formal quote (and the OMA or CSA, if required)."
-    )
-    disclaimer_cell = ws.cell(row=disclaimer_row, column=1, value=disclaimer_text)
-    ws.merge_cells(start_row=disclaimer_row, start_column=1, end_row=disclaimer_row, end_column=TABLE_COLUMN_COUNT)
-    disclaimer_cell.alignment = DISCLAIMER_ALIGNMENT
-    ws.row_dimensions[disclaimer_row].height = DISCLAIMER_ROW_HEIGHT
-    return quote_row, disclaimer_row
 
 @dataclass
 class LineItem:
@@ -681,6 +598,122 @@ def build_line_items(
         "total_disk": make_lines(total_disk_gb, raw_total_disk_gb),
         "used_disk": make_lines(used_disk_gb, raw_used_disk_gb),
     }
+
+
+# =========================
+# Excel output
+# =========================
+
+def build_metadata_rows(metadata: Dict[str, object]) -> List[Tuple[str, str, str]]:
+    return [
+        ("Source Files", metadata["source_files"], ""),
+        ("Hours per Month", metadata["hours_per_month"], ""),
+        ("Currency", metadata["currency"], ""),
+        ("VPU", metadata["vpu"], ""),
+        ("Powered On VMs", str(metadata["powered_on_vms"]), "(included)"),
+        (
+            "Powered Off VMs",
+            str(metadata["powered_off_vms"]),
+            "(included)" if metadata["powered_off_included"] else "(excluded)",
+        ),
+        (
+            "Powered Off Disks",
+            "",
+            "(included)" if metadata["powered_off_disks_included"] else "(excluded)",
+        ),
+    ]
+
+
+def apply_column_widths(ws) -> None:
+    for column, width in COLUMN_WIDTHS.items():
+        ws.column_dimensions[column].width = width
+
+
+def write_metadata(ws, rows: List[Tuple[str, str, str]], start_row: int = 2) -> int:
+    row = start_row
+    for title, value, status in rows:
+        ws.cell(row=row, column=1, value=title)
+        ws.cell(row=row, column=2, value=value)
+        if status:
+            ws.cell(row=row, column=3, value=status)
+        row += 1
+    return row - 1
+
+
+def format_row(ws, row: int, *, bold: bool = False, vertical: str = "bottom") -> None:
+    for col_idx in range(1, TABLE_COLUMN_COUNT + 1):
+        cell = ws.cell(row=row, column=col_idx)
+        if bold:
+            cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="left", vertical=vertical)
+
+
+def format_metadata_block(ws, start_row: int, end_row: int) -> None:
+    for row in range(start_row, end_row + 1):
+        format_row(ws, row)
+    format_row(ws, start_row, bold=True)
+
+
+def format_table_header(ws, header_row: int, headers: List[str]) -> None:
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.fill = HEADER_FILL
+
+
+def format_data_rows(ws, start_row: int, end_row: int) -> None:
+    for row in range(start_row, end_row):
+        format_row(ws, row)
+
+
+def format_total_row(ws, total_row: int) -> None:
+    format_row(ws, total_row, bold=True)
+
+
+def apply_row_heights(
+    ws,
+    metadata_end_row: int,
+    blank_row_index: int,
+    header_row: int,
+    data_start: int,
+    total_row: int,
+    disclaimer_row: int,
+) -> None:
+    ws.row_dimensions[1].height = TITLE_ROW_HEIGHT
+    for row in range(2, metadata_end_row + 1):
+        ws.row_dimensions[row].height = DEFAULT_ROW_HEIGHT
+    ws.row_dimensions[blank_row_index].height = DEFAULT_ROW_HEIGHT
+    ws.row_dimensions[header_row].height = HEADER_ROW_HEIGHT
+    for row in range(data_start, total_row + 1):
+        ws.row_dimensions[row].height = DEFAULT_ROW_HEIGHT
+    quote_row = disclaimer_row - 2
+    if quote_row >= 2:
+        ws.row_dimensions[quote_row].height = DEFAULT_ROW_HEIGHT
+    ws.row_dimensions[disclaimer_row].height = DISCLAIMER_ROW_HEIGHT
+
+
+def append_advisory(ws, total_row: int) -> Tuple[int, int]:
+    quote_row = total_row + 3
+    quote_cell = ws.cell(row=quote_row, column=1, value="Quote is for investment proposal only.")
+    quote_cell.font = Font(bold=True, color="00FF0000")
+    ws.merge_cells(start_row=quote_row, start_column=1, end_row=quote_row, end_column=TABLE_COLUMN_COUNT)
+
+    disclaimer_row = quote_row + 2
+    disclaimer_text = (
+        "Disclaimer:  This sample quote is provided solely for evaluation purposes and is intended to further "
+        "discussions between you and Oracle.  This sample quote is not eligible for acceptance by you and is "
+        "not a binding contract between you and Oracle for the services specified.  If you would like to purchase "
+        "the services specified in this sample quote, please request that Oracle issue you a formal quote (which "
+        "may include an OMA or a CSA if you do not already have an appropriate agreement in place with Oracle) "
+        "for your acceptance and execution.  Your formal quote will be effective only upon Oracle's acceptance "
+        "of the formal quote (and the OMA or CSA, if required)."
+    )
+    disclaimer_cell = ws.cell(row=disclaimer_row, column=1, value=disclaimer_text)
+    ws.merge_cells(start_row=disclaimer_row, start_column=1, end_row=disclaimer_row, end_column=TABLE_COLUMN_COUNT)
+    disclaimer_cell.alignment = DISCLAIMER_ALIGNMENT
+    ws.row_dimensions[disclaimer_row].height = DISCLAIMER_ROW_HEIGHT
+    return quote_row, disclaimer_row
 
 
 def write_output(
