@@ -1,10 +1,13 @@
 <div align="center">
-  <img src="logo_gh.png" width="256" height="381" alt="Logo"/>
-  <h1 align="center">OCI RVTools Cost Estimator</h1>
+  <img src="logo_gh.png" alt="Logo"/>
   <h4 align="center">Turn RVTools exports into Oracle Cloud monthly cost estimate</h4>
 </div>
 
-This utility ingests one or more RVTools `vInfo`sheets, pulls the latest Oracle Cloud Infrastructure list prices, and produces an Excel workbook with aggregate monthly costs for all included resources. It doesn’t price individual VMs; instead, because OCI pricing scales linearly, it calculates the cost of a hypothetical single VM whose vCPU, RAM, and disk match the combined totals of the ingested workloads. That aggregated cost is identical to summing the per-VM prices, but a lot just easier to understand 🤓.
+<br>
+    
+This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle Cloud Infrastructure list prices, and produces an Excel workbook with aggregate monthly costs for all included resources. 
+
+Because OCI pricing scales linearly it It doesn’t price individual VMs. Instead it calculates the cost of a hypothetical single VM whose vCPU, RAM, and disk match the combined totals of the ingested workloads. That aggregated cost is identical to summing the per-VM prices, but a lot just easier to understand and calculate 🤓.
 
 ---
 
