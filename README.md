@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo_gh.png" width="256" height="69" alt="Logo"/>
+  <img src="logo_gh.png" width="345" height="93" alt="Logo"/>
   <h4 align="center">Turn RVTools exports into Oracle Cloud monthly cost estimate</h4>
 </div>
 
