@@ -75,3 +75,6 @@ docker-compose.override.yml
 
 # Customer data
 customer/
+
+.claude/
+DEV_NOTES.md
