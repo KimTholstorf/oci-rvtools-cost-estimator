@@ -1,0 +1,59 @@
+name: Update Homebrew Formula
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Wait for PyPI to process the package
+        run: sleep 120
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update formula
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+
+          PYPI_JSON=$(curl -s "https://pypi.org/pypi/oci-rvtools/${VERSION}/json")
+
+          URL=$(echo "$PYPI_JSON" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for f in data['urls']:
+              if f['filename'].endswith('.tar.gz'):
+                  print(f['url'])
+                  break
+          ")
+
+          SHA256=$(echo "$PYPI_JSON" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          for f in data['urls']:
+              if f['filename'].endswith('.tar.gz'):
+                  print(f['digests']['sha256'])
+                  break
+          ")
+
+          sed -i "s|url \".*\"|url \"${URL}\"|" Formula/oci-rvtools.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" Formula/oci-rvtools.rb
+
+      - name: Commit and push
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/oci-rvtools.rb
+          git commit -m "Update oci-rvtools formula to ${VERSION}"
+          git push

@@ -1,3 +1,7 @@
+# Copyright (c) 2026 Kim Tholstorf
+# https://github.com/KimTholstorf/oci-rvtools-cost-estimator
+# MIT License — see LICENSE file for details
+
 """
 OCI Monthly Cost Calculator (direct RVTools input)
 
@@ -30,7 +34,7 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # Version
 # =========================
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 
 # =========================

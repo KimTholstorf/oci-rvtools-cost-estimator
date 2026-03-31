@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Kim Tholstorf
+# https://github.com/KimTholstorf/oci-rvtools-cost-estimator
+# MIT License — see LICENSE file for details
+#
+# Easy Release Publisher
+# Checks and syncs version numbers across the project, then commits, tags, and
+# pushes to trigger the PyPI and Homebrew GitHub Actions workflows.
+#
+# Usage:
+#   ./easy-release-publish
+#   ./easy-release-publish --version 1.0.8
+#   ./easy-release-publish --version 1.0.8 --commit "release message"
+#   ./easy-release-publish --version 1.0.8 --commit "release message" --auto-proceed
+set -euo pipefail
+
+# ── Config — update these two paths if the project structure changes ───────────
+PYTHON_APP="oci_rvtools/core.py"   # Python file containing VERSION = "x.y.z"
+PYPROJECT="pyproject.toml"         # Setuptools project metadata file
+
+# ── Parse arguments ────────────────────────────────────────────────────────────
+# All arguments are optional — omitting them enables interactive prompts instead
+ARG_VERSION=""
+ARG_COMMIT=""
+ARG_AUTO_PROCEED=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --version)
+            ARG_VERSION="$2"      # e.g. 1.0.8 (without the v prefix)
+            shift 2
+            ;;
+        --commit)
+            ARG_COMMIT="$2"       # git commit message
+            shift 2
+            ;;
+        --auto-proceed)
+            ARG_AUTO_PROCEED=true # skip the final y/N confirmation prompt
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Usage: ./easy-release-publish [--version 1.0.8] [--commit \"message\"] [--auto-proceed]"
+            exit 1
+            ;;
+    esac
+done
+
+# ── Extract current versions from both source files ───────────────────────────
+APP_VERSION=$(grep 'VERSION = ' "$PYTHON_APP" | sed 's/.*VERSION = "\(.*\)".*/\1/')
+PYPROJECT_VERSION=$(grep '^version = ' "$PYPROJECT" | sed 's/version = "\(.*\)"/\1/')
+
+echo ""
+echo "Current versions:"
+echo "  $(basename "$PYTHON_APP") → $APP_VERSION"
+echo "  pyproject.toml            → $PYPROJECT_VERSION"
+echo ""
+
+# ── Resolve which version to use ──────────────────────────────────────────────
+# Priority: --version flag > interactive prompt > keep existing
+if [ -n "$ARG_VERSION" ]; then
+    # Version supplied via flag — use it directly, no prompt needed
+    NEW_VERSION="$ARG_VERSION"
+    echo "Using version from --version flag: $NEW_VERSION"
+elif [ "$APP_VERSION" != "$PYPROJECT_VERSION" ]; then
+    # Mismatch detected — ask user to pick or enter a version
+    echo "⚠️  Version mismatch detected!"
+    echo ""
+    echo "  1) Use $APP_VERSION  (from $(basename "$PYTHON_APP"))"
+    echo "  2) Use $PYPROJECT_VERSION  (from pyproject.toml)"
+    echo "  3) Enter a different version"
+    echo ""
+    read -rp "Choice [1/2/3]: " choice
+    case $choice in
+        1) NEW_VERSION="$APP_VERSION" ;;
+        2) NEW_VERSION="$PYPROJECT_VERSION" ;;
+        3)
+            read -rp "Enter version: " NEW_VERSION
+            if [ -z "$NEW_VERSION" ]; then
+                echo "Version cannot be empty. Aborting."
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Invalid choice. Aborting."
+            exit 1
+            ;;
+    esac
+else
+    # Versions match — ask if a bump is needed or keep as-is
+    echo "✅ Versions match: $APP_VERSION"
+    echo ""
+    read -rp "Enter new version (or press Enter to keep $APP_VERSION): " NEW_VERSION
+    NEW_VERSION="${NEW_VERSION:-$APP_VERSION}"
+fi
+
+# ── Update version in both files if the version has changed ───────────────────
+if [ "$NEW_VERSION" != "$APP_VERSION" ] || [ "$NEW_VERSION" != "$PYPROJECT_VERSION" ]; then
+    echo ""
+    echo "Updating version to $NEW_VERSION ..."
+
+    # Use Python for the replacements to avoid sed -i portability issues (macOS vs Linux)
+    python3 - <<PYEOF
+import re
+
+for path, pattern, replacement in [
+    ("$PYTHON_APP", r'VERSION = ".*"',   'VERSION = "$NEW_VERSION"'),
+    ("$PYPROJECT",  r'^version = ".*"',  'version = "$NEW_VERSION"'),
+]:
+    with open(path, "r") as f:
+        content = f.read()
+    content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+    with open(path, "w") as f:
+        f.write(content)
+    print(f"  updated {path}")
+PYEOF
+
+    echo "✅ Version set to $NEW_VERSION"
+fi
+
+# ── Build the git tag from the resolved version ───────────────────────────────
+TAG="v$NEW_VERSION"
+
+# ── Guard against re-using an existing local tag ──────────────────────────────
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo ""
+    echo "⚠️  Tag $TAG already exists locally."
+    read -rp "Delete and recreate it? [y/N]: " retag
+    if [[ "$retag" == "y" || "$retag" == "Y" ]]; then
+        git tag -d "$TAG"
+    else
+        echo "Aborting."
+        exit 1
+    fi
+fi
+
+# ── Resolve commit message ─────────────────────────────────────────────────────
+if [ -n "$ARG_COMMIT" ]; then
+    # Commit message supplied via flag — use it directly
+    COMMIT_MSG="$ARG_COMMIT"
+    echo ""
+    echo "Using commit message from --commit flag: \"$COMMIT_MSG\""
+else
+    echo ""
+    read -rp "Commit message: " COMMIT_MSG
+    if [ -z "$COMMIT_MSG" ]; then
+        echo "Commit message cannot be empty. Aborting."
+        exit 1
+    fi
+fi
+
+# ── Show summary of git operations before executing ───────────────────────────
+echo ""
+echo "About to run:"
+echo "  git add ."
+echo "  git commit -m \"$COMMIT_MSG\""
+echo "  git push origin main"
+echo "  git tag $TAG"
+echo "  git push origin $TAG"
+echo ""
+
+# Skip confirmation if --auto-proceed was passed, otherwise ask
+if [ "$ARG_AUTO_PROCEED" = true ]; then
+    echo "Auto-proceeding (--auto-proceed)"
+else
+    read -rp "Proceed? [y/N]: " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+fi
+
+# ── Commit, push, tag, and push tag — this triggers the GitHub Actions workflows
+git add .
+git commit -m "$COMMIT_MSG"
+git push origin main
+git tag "$TAG"
+git push origin "$TAG"
+
+REPO_URL=$(git remote get-url origin | sed 's/git@github.com:/https:\/\/github.com\//' | sed 's/\.git$//')
+
+echo ""
+echo "🚀 Released $TAG! to:"
+echo "  $REPO_URL"
