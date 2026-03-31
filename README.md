@@ -7,7 +7,7 @@
   <a href="https://pypi.org/project/oci-rvtools/" target="_blank" rel="noopener">
     <img alt="GitHub Actions PyPi Status" src="https://img.shields.io/github/actions/workflow/status/KimTholstorf/oci-rvtools-cost-estimator/pypi-publish.yml?label=pyp&cacheSeconds=0">
   </a>
-  <a href="https://github.com/KimTholstorf/homebrew-csvtrim" target="_blank" rel="noopener">
+  <a href="https://github.com/KimTholstorf/oci-rvtools-cost-estimator/tree/main/Formula" target="_blank" rel="noopener">
     <img alt="GitHub Actions Homebrew Status" src="https://img.shields.io/badge/brew-online-brightgreen">
   </a>
 </div>
