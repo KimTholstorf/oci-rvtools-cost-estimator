@@ -1,6 +1,15 @@
 <div align="center">
-  <img src="logo_gh.png" width="345" height="93" alt="Logo"/>
+  <img src="images/logo_gh.png" width="345" height="93" alt="Logo"/>
   <h4 align="center">Turn VMware RVTools exports into an Oracle Cloud monthly cost estimate</h4>
+</div>
+
+<div align="center">
+  <a href="https://pypi.org/project/oci-rvtools/" target="_blank" rel="noopener">
+    <img alt="GitHub Actions PyPi Status" src="https://img.shields.io/github/actions/workflow/status/KimTholstorf/oci-rvtools-cost-estimator/pypi-publish.yml?label=pyp&cacheSeconds=0">
+  </a>
+  <a href="https://github.com/KimTholstorf/homebrew-csvtrim" target="_blank" rel="noopener">
+    <img alt="GitHub Actions Homebrew Status" src="https://img.shields.io/badge/brew-online-brightgreen">
+  </a>
 </div>
 
 <br>
