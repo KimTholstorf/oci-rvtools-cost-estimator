@@ -185,20 +185,20 @@
 <header>
   <div>
     <h1>OCI RVTools Cost Estimator</h1>
-    <p>Upload a VMware RVTools export and download your Oracle Cloud monthly cost estimate</p>
+    <p>VMware RVTools Export to Oracle Cloud monthly cost estimate — 100% browser-local via WebAssembly. See more in <a href="security.html" target="_blank" style="color:rgba(255,255,255,0.85);text-decoration:underline;">Security &amp; Privacy</a></p>
   </div>
 </header>
 
 <main>
 
-  <!-- Init status (top) -->
+  <!-- Init status (top) — Pyodide initialisation only -->
   <div id="status-init">
-    <div class="status-msg loading" id="status-loading" style="display:none">
+    <div class="status-msg loading" id="status-init-loading" style="display:none">
       <div class="spinner"></div>
-      <span id="status-text">Initialising Python environment…</span>
+      <span id="status-init-text">Initialising Python environment…</span>
     </div>
-    <div class="status-msg error" id="status-error" style="display:none">
-      ❌ <span id="error-text"></span>
+    <div class="status-msg error" id="status-init-error" style="display:none">
+      ❌ <span id="status-init-error-text"></span>
     </div>
   </div>
 
@@ -270,20 +270,27 @@
     </button>
   </div>
 
-  <!-- Success (bottom) -->
-  <div id="status-success" style="display:none">
-    <div class="status-msg success">
+  <!-- Run status (bottom) — processing + success + error -->
+  <div id="status-run">
+    <div class="status-msg loading" id="status-run-loading" style="display:none">
+      <div class="spinner"></div>
+      <span id="status-run-text">Preparing…</span>
+    </div>
+    <div class="status-msg success" id="status-success" style="display:none">
       ✅ <span>Estimate ready!</span>
       <button class="btn btn-success" id="download-btn" style="margin-left:auto" onclick="downloadResult()">
         Download .xlsx
       </button>
+    </div>
+    <div class="status-msg error" id="status-run-error" style="display:none">
+      ❌ <span id="status-run-error-text"></span>
     </div>
   </div>
 
 </main>
 
 <footer>
-  <a href="https://github.com/KimTholstorf/oci-rvtools-cost-estimator" target="_blank">oci-rvtools-cost-estimator</a>
+  <a href="https://github.com/KimTholstorf/oci-rvtools-cost-estimator" target="_blank" style="display:inline-flex;align-items:center;gap:0.3rem;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>oci-rvtools-cost-estimator</a>
   <span id="core-version"></span>
   &nbsp;·&nbsp; MIT License © 2026 Kim Tholstorf
   &nbsp;·&nbsp; <a href="security.html" target="_blank">Security &amp; Privacy</a>
@@ -328,23 +335,18 @@
 
   // ── Load Pyodide on page load ─────────────────────────────────────────────
   async function initPyodide() {
-    showStatus('loading', 'Loading Python environment (first load ~15s)…');
+    showInitStatus('Loading Python environment (first load ~15s)…');
 
     // Load pyodide script
     await loadScript('https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js');
     pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.5/full/' });
 
-    showStatus('loading', 'Installing pandas and openpyxl…');
+    showInitStatus('Installing packages…');
     await pyodide.loadPackage('micropip');
     const micropip = pyodide.pyimport('micropip');
-    await micropip.install(['pandas', 'openpyxl']);
+    await micropip.install(['pandas', 'openpyxl', 'oci-rvtools']);
 
-    showStatus('loading', 'Loading estimator…');
-
-    // Fetch core.py — served from the same docs/ directory
-    const coreResp = await fetch('./core.py');
-    if (!coreResp.ok) throw new Error('Could not load core.py');
-    const coreSrc = await coreResp.text();
+    showInitStatus('Loading estimator…');
 
     // Fetch prices.json
     const pricesResp = await fetch('prices.json');
@@ -365,20 +367,9 @@
       currencySelect.appendChild(opt);
     });
 
-    // Write core.py into Pyodide virtual FS
-    pyodide.FS.writeFile('/core.py', coreSrc);
-
-    // Execute core.py to define all functions/classes
+    // Import directly from the installed oci-rvtools package
     await pyodide.runPythonAsync(`
-import sys
-sys.path.insert(0, '/')
-import importlib.util, types
-spec = importlib.util.spec_from_file_location("oci_rvtools_core", "/core.py")
-mod = importlib.util.module_from_spec(spec)
-sys.modules["oci_rvtools_core"] = mod
-spec.loader.exec_module(mod)
-# Bring key names into global scope for the patch below
-from oci_rvtools_core import PricingClient, PriceRecord, main as _main, VERSION as _version
+from oci_rvtools.core import PricingClient, PriceRecord, main as _main, VERSION as _version
 `);
 
     const version = pyodide.globals.get('_version');
@@ -407,7 +398,7 @@ PricingClient.get_price = _patched_get_price
     pyodide.FS.mkdir('/output');
 
     pyodideReady = true;
-    hideStatus();
+    hideInitStatus();
     updateRunButton();
   }
 
@@ -426,8 +417,8 @@ PricingClient.get_price = _patched_get_price
   async function runEstimator() {
     if (!uploadedFile || !pyodideReady) return;
     resultBytes = null;
-    hideStatus();
-    showStatus('loading', 'Preparing…');
+    hideRunStatus();
+    showRunStatus('Preparing…');
     document.getElementById('run-btn').disabled = true;
 
     try {
@@ -450,12 +441,12 @@ with zipfile.ZipFile('/input.zip') as zf:
 len(xlsx_files)
 `);
         if (fileCount === 0) throw new Error('No .xlsx files found inside the zip archive.');
-        showStatus('loading', `Processing ${fileCount} RVTools file${fileCount > 1 ? 's' : ''}…`);
+        showRunStatus(`Processing ${fileCount} RVTools file${fileCount > 1 ? 's' : ''}…`);
         rvtoolsPath = '/input';
       } else {
         // Single .xlsx
         pyodide.FS.writeFile('/input.xlsx', new Uint8Array(buf));
-        showStatus('loading', 'Processing RVTools export…');
+        showRunStatus('Processing RVTools export…');
         rvtoolsPath = '/input.xlsx';
       }
 
@@ -485,7 +476,7 @@ _rc
       resultBytes = pyodide.FS.readFile('/output/result.xlsx');
       showSuccess();
     } catch (err) {
-      showError(err.message || String(err));
+      showRunError(err.message || String(err));
     } finally {
       document.getElementById('run-btn').disabled = false;
     }
@@ -501,34 +492,62 @@ _rc
     a.download = 'oci_cost_summary.xlsx';
     a.click();
     URL.revokeObjectURL(url);
+
+    // Reset dropzone and hide success bar
+    uploadedFile = null;
+    resultBytes  = null;
+    dropzone.classList.remove('has-file');
+    const nameEl = document.getElementById('file-name');
+    nameEl.textContent  = '';
+    nameEl.style.display = 'none';
+    document.getElementById('file-input').value = '';
+    hideRunStatus();
+    updateRunButton();
   }
 
   // ── Status helpers ────────────────────────────────────────────────────────
-  function showStatus(type, msg) {
-    document.getElementById('status-loading').style.display = type === 'loading' ? 'flex' : 'none';
-    document.getElementById('status-error').style.display   = 'none';
-    document.getElementById('status-success').style.display = 'none';
-    if (type === 'loading') document.getElementById('status-text').textContent = msg;
+  // Init area (top) — used during Pyodide startup
+  function showInitStatus(msg) {
+    document.getElementById('status-init-loading').style.display = 'flex';
+    document.getElementById('status-init-error').style.display   = 'none';
+    document.getElementById('status-init-text').textContent = msg;
+  }
+  function hideInitStatus() {
+    document.getElementById('status-init-loading').style.display = 'none';
+    document.getElementById('status-init-error').style.display   = 'none';
+  }
+  function showInitError(msg) {
+    document.getElementById('status-init-loading').style.display = 'none';
+    document.getElementById('status-init-error').style.display   = 'flex';
+    document.getElementById('status-init-error-text').textContent = msg;
+  }
+
+  // Run area (bottom) — used during estimate generation
+  function showRunStatus(msg) {
+    document.getElementById('status-run-loading').style.display = 'flex';
+    document.getElementById('status-run-text').textContent = msg;
+    document.getElementById('status-success').style.display      = 'none';
+    document.getElementById('status-run-error').style.display    = 'none';
   }
   function showSuccess() {
-    document.getElementById('status-loading').style.display = 'none';
-    document.getElementById('status-error').style.display   = 'none';
-    document.getElementById('status-success').style.display = 'block';
+    document.getElementById('status-run-loading').style.display = 'none';
+    document.getElementById('status-success').style.display     = 'block';
+    document.getElementById('status-run-error').style.display   = 'none';
   }
-  function showError(msg) {
-    document.getElementById('status-loading').style.display = 'none';
-    document.getElementById('status-error').style.display   = 'flex';
-    document.getElementById('status-success').style.display = 'none';
-    document.getElementById('error-text').textContent = msg;
+  function showRunError(msg) {
+    document.getElementById('status-run-loading').style.display = 'none';
+    document.getElementById('status-success').style.display     = 'none';
+    document.getElementById('status-run-error').style.display   = 'flex';
+    document.getElementById('status-run-error-text').textContent = msg;
   }
-  function hideStatus() {
-    document.getElementById('status-loading').style.display = 'none';
-    document.getElementById('status-error').style.display   = 'none';
-    document.getElementById('status-success').style.display = 'none';
+  function hideRunStatus() {
+    document.getElementById('status-run-loading').style.display = 'none';
+    document.getElementById('status-success').style.display     = 'none';
+    document.getElementById('status-run-error').style.display   = 'none';
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
-  initPyodide().catch(err => showError('Failed to initialise: ' + err.message));
+  initPyodide().catch(err => showInitError('Failed to initialise: ' + err.message));
 </script>
 </body>
 </html>
