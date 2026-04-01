@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCI RVTools Cost Estimator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f7fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #C74634;
+      color: white;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.3rem; font-weight: 600; }
+    header p  { font-size: 0.85rem; opacity: 0.85; margin-top: 0.15rem; }
+
+    main {
+      max-width: 720px;
+      width: 100%;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      flex: 1;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      color: #C74634;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.8rem;
+    }
+
+    /* Drop zone */
+    #dropzone {
+      border: 2px dashed #ccd;
+      border-radius: 8px;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    #dropzone.dragover { border-color: #C74634; background: #fff5f3; }
+    #dropzone.has-file  { border-color: #28a745; background: #f0fff4; }
+    #dropzone svg { width: 40px; height: 40px; margin-bottom: 0.75rem; opacity: 0.4; }
+    #dropzone p  { color: #666; font-size: 0.9rem; }
+    #dropzone .filename { font-weight: 600; color: #28a745; margin-top: 0.4rem; font-size: 0.95rem; }
+    #file-input { display: none; }
+
+    /* Options grid */
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .field label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 0.35rem;
+    }
+    .info-link {
+      display: inline-flex;
+      align-items: center;
+      color: #aaa;
+      transition: color 0.15s;
+      line-height: 1;
+    }
+    .info-link:hover { color: #C74634; }
+    .info-link svg { width: 14px; height: 14px; }
+    .field input, .field select {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid #dde;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      color: #1a1a2e;
+      background: #fafafa;
+    }
+    .field input:focus, .field select:focus {
+      outline: none;
+      border-color: #C74634;
+    }
+    .field.full { grid-column: 1 / -1; }
+
+    /* Toggle checkboxes */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.88rem;
+      color: #444;
+      margin-top: 0.5rem;
+    }
+    .toggle-row input[type=checkbox] { width: 16px; height: 16px; accent-color: #C74634; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.5rem;
+      border-radius: 7px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary  { background: #C74634; color: white; }
+    .btn-primary:hover:not(:disabled)  { opacity: 0.9; }
+    .btn-success  { background: #28a745; color: white; }
+    .btn-success:hover:not(:disabled)  { opacity: 0.9; }
+
+    /* Status / progress */
+    #status-area { display: none; }
+    .status-msg {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.9rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .status-msg.loading { background: #fff8e1; color: #856404; }
+    .status-msg.success { background: #d4edda; color: #155724; }
+    .status-msg.error   { background: #f8d7da; color: #721c24; }
+
+    .spinner {
+      width: 20px; height: 20px;
+      border: 3px solid #e0c060;
+      border-top-color: #856404;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Prices info */
+    .prices-note {
+      font-size: 0.78rem;
+      color: #888;
+      margin-top: 1rem;
+    }
+    .prices-note a { color: #C74634; }
+
+    footer {
+      text-align: center;
+      font-size: 0.78rem;
+      color: #aaa;
+      padding: 1.5rem;
+    }
+    footer a { color: #C74634; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>OCI RVTools Cost Estimator</h1>
+    <p>Upload a VMware RVTools export and download your Oracle Cloud monthly cost estimate</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- Init status (top) -->
+  <div id="status-init">
+    <div class="status-msg loading" id="status-loading" style="display:none">
+      <div class="spinner"></div>
+      <span id="status-text">Initialising Python environment…</span>
+    </div>
+    <div class="status-msg error" id="status-error" style="display:none">
+      ❌ <span id="error-text"></span>
+    </div>
+  </div>
+
+  <!-- Step 1: Upload -->
+  <div class="card">
+    <h2>1 — RVTools Export</h2>
+    <div id="dropzone" onclick="document.getElementById('file-input').click()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 16V4m0 0L8 8m4-4l4 4"/><rect x="2" y="16" width="20" height="6" rx="2"/>
+      </svg>
+      <p>Drag &amp; drop your <strong>RVTools .xlsx</strong> or a <strong>.zip</strong> of multiple exports here, or click to browse</p>
+      <p id="file-name" class="filename" style="display:none"></p>
+    </div>
+    <input type="file" id="file-input" accept=".xlsx,.zip" />
+  </div>
+
+  <!-- Step 2: Options -->
+  <div class="card">
+    <h2>2 — Options</h2>
+    <div class="options-grid">
+      <div class="field">
+        <label for="hours">Hours per month</label>
+        <input type="number" id="hours" value="730" min="1" max="744" />
+      </div>
+      <div class="field">
+        <label for="currency">Currency</label>
+        <select id="currency">
+          <option value="USD" selected>USD</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="shape">Compute shape <a class="info-link" href="https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm" target="_blank" title="Oracle Compute Shapes documentation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="17" stroke-width="2.5"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg></a></label>
+        <select id="shape">
+          <option value="e5" selected>VM.Standard.E5.Flex</option>
+          <option value="e6">VM.Standard.E6.Flex</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="vpu">Disk performance level <a class="info-link" href="https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm" target="_blank" title="Oracle Block Volume Performance documentation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="17" stroke-width="2.5"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg></a></label>
+        <select id="vpu">
+          <option value="1">Lower cost</option>
+          <option value="10" selected>Balanced</option>
+          <option value="20">High performance</option>
+          <option value="30">Ultra high performance</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <div class="toggle-row">
+          <input type="checkbox" id="include-off-vms" />
+          <label for="include-off-vms">Include powered-off VM CPU/RAM</label>
+        </div>
+        <div class="toggle-row" style="margin-top:0.5rem">
+          <input type="checkbox" id="include-off-disks" checked />
+          <label for="include-off-disks">Include powered-off VM disks</label>
+        </div>
+      </div>
+    </div>
+    <p class="prices-note">
+      Prices loaded from cached OCI list prices — last updated <strong id="prices-date">…</strong>.
+    </p>
+  </div>
+
+  <!-- Step 3: Generate -->
+  <div class="card">
+    <h2>3 — Generate</h2>
+    <button class="btn btn-primary" id="run-btn" disabled onclick="runEstimator()">
+      Generate cost estimate
+    </button>
+  </div>
+
+  <!-- Success (bottom) -->
+  <div id="status-success" style="display:none">
+    <div class="status-msg success">
+      ✅ <span>Estimate ready!</span>
+      <button class="btn btn-success" id="download-btn" style="margin-left:auto" onclick="downloadResult()">
+        Download .xlsx
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <a href="https://github.com/KimTholstorf/oci-rvtools-cost-estimator" target="_blank">oci-rvtools-cost-estimator</a>
+  <span id="core-version"></span>
+  &nbsp;·&nbsp; MIT License © 2026 Kim Tholstorf
+  &nbsp;·&nbsp; <a href="security.html" target="_blank">Security &amp; Privacy</a>
+</footer>
+
+<script>
+  // ── State ─────────────────────────────────────────────────────────────────
+  let pyodide = null;
+  let uploadedFile = null;
+  let resultBytes = null;
+  let pyodideReady = false;
+
+  // ── File upload / drag-drop ───────────────────────────────────────────────
+  const dropzone  = document.getElementById('dropzone');
+  const fileInput = document.getElementById('file-input');
+
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', ()  => dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+  function handleFile(file) {
+    if (!file || (!file.name.endsWith('.xlsx') && !file.name.endsWith('.zip'))) {
+      showError('Please upload a .xlsx RVTools export file or a .zip of multiple exports.');
+      return;
+    }
+    uploadedFile = file;
+    dropzone.classList.add('has-file');
+    const nameEl = document.getElementById('file-name');
+    nameEl.textContent = file.name;
+    nameEl.style.display = 'block';
+    updateRunButton();
+  }
+
+  function updateRunButton() {
+    document.getElementById('run-btn').disabled = !(uploadedFile && pyodideReady);
+  }
+
+  // ── Load Pyodide on page load ─────────────────────────────────────────────
+  async function initPyodide() {
+    showStatus('loading', 'Loading Python environment (first load ~15s)…');
+
+    // Load pyodide script
+    await loadScript('https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js');
+    pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.5/full/' });
+
+    showStatus('loading', 'Installing pandas and openpyxl…');
+    await pyodide.loadPackage('micropip');
+    const micropip = pyodide.pyimport('micropip');
+    await micropip.install(['pandas', 'openpyxl']);
+
+    showStatus('loading', 'Loading estimator…');
+
+    // Fetch core.py — served from the same docs/ directory
+    const coreResp = await fetch('./core.py');
+    if (!coreResp.ok) throw new Error('Could not load core.py');
+    const coreSrc = await coreResp.text();
+
+    // Fetch prices.json
+    const pricesResp = await fetch('prices.json');
+    if (!pricesResp.ok) throw new Error('Could not load prices.json');
+    const prices = await pricesResp.json();
+    document.getElementById('prices-date').textContent = prices.updated;
+
+    // Populate currency dropdown from cached prices (sorted, USD first)
+    const currencySelect = document.getElementById('currency');
+    const firstPart = Object.values(prices.prices)[0];
+    const currencies = Object.keys(firstPart.currencies).sort();
+    currencySelect.innerHTML = '';
+    currencies.forEach(code => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = code;
+      if (code === 'USD') opt.selected = true;
+      currencySelect.appendChild(opt);
+    });
+
+    // Write core.py into Pyodide virtual FS
+    pyodide.FS.writeFile('/core.py', coreSrc);
+
+    // Execute core.py to define all functions/classes
+    await pyodide.runPythonAsync(`
+import sys
+sys.path.insert(0, '/')
+import importlib.util, types
+spec = importlib.util.spec_from_file_location("oci_rvtools_core", "/core.py")
+mod = importlib.util.module_from_spec(spec)
+sys.modules["oci_rvtools_core"] = mod
+spec.loader.exec_module(mod)
+# Bring key names into global scope for the patch below
+from oci_rvtools_core import PricingClient, PriceRecord, main as _main, VERSION as _version
+`);
+
+    const version = pyodide.globals.get('_version');
+    document.getElementById('core-version').textContent = 'v' + version + ' ·';
+
+    // Patch PricingClient.get_price to use cached prices
+    // The patch reads the selected currency at call time so switching currency works correctly
+    const pricesJson = JSON.stringify(prices);
+    await pyodide.runPythonAsync(`
+import json as _json
+_cached_prices = _json.loads(${JSON.stringify(pricesJson)})
+
+def _patched_get_price(self, part_number):
+    p = _cached_prices["prices"][part_number]
+    unit_price = p["currencies"].get(self.currency, p["currencies"]["USD"])
+    return PriceRecord(
+        part_number=part_number,
+        display_name=p["display_name"],
+        unit_price=unit_price
+    )
+
+PricingClient.get_price = _patched_get_price
+`);
+
+    // Create output dir
+    pyodide.FS.mkdir('/output');
+
+    pyodideReady = true;
+    hideStatus();
+    updateRunButton();
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) return resolve();
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  // ── Run estimator ─────────────────────────────────────────────────────────
+  async function runEstimator() {
+    if (!uploadedFile || !pyodideReady) return;
+    resultBytes = null;
+    hideStatus();
+    showStatus('loading', 'Preparing…');
+    document.getElementById('run-btn').disabled = true;
+
+    try {
+      const buf = await uploadedFile.arrayBuffer();
+      let rvtoolsPath;
+
+      if (uploadedFile.name.endsWith('.zip')) {
+        // Write zip to virtual FS, extract .xlsx files with Python's zipfile module
+        pyodide.FS.writeFile('/input.zip', new Uint8Array(buf));
+        const fileCount = await pyodide.runPythonAsync(`
+import zipfile, os
+os.makedirs('/input', exist_ok=True)
+with zipfile.ZipFile('/input.zip') as zf:
+    xlsx_files = [n for n in zf.namelist() if n.endswith('.xlsx') and not n.startswith('__MACOSX')]
+    for name in xlsx_files:
+        data = zf.read(name)
+        out_path = '/input/' + os.path.basename(name)
+        with open(out_path, 'wb') as f:
+            f.write(data)
+len(xlsx_files)
+`);
+        if (fileCount === 0) throw new Error('No .xlsx files found inside the zip archive.');
+        showStatus('loading', `Processing ${fileCount} RVTools file${fileCount > 1 ? 's' : ''}…`);
+        rvtoolsPath = '/input';
+      } else {
+        // Single .xlsx
+        pyodide.FS.writeFile('/input.xlsx', new Uint8Array(buf));
+        showStatus('loading', 'Processing RVTools export…');
+        rvtoolsPath = '/input.xlsx';
+      }
+
+      // Build argv from form
+      const argv = [
+        '--rvtools', rvtoolsPath,
+        '--output',  '/output/result.xlsx',
+        '--hours',    document.getElementById('hours').value,
+        '--currency', document.getElementById('currency').value,
+        '--vpu',      document.getElementById('vpu').value,
+      ];
+      if (document.getElementById('shape').value === 'e6') {
+        argv.push('--ocpu-part', 'B111129', '--memory-part', 'B111130');
+      }
+      if (document.getElementById('include-off-vms').checked)   argv.push('--include-poweredoff-vms');
+      if (!document.getElementById('include-off-disks').checked) argv.push('--exclude-poweredoff-disks');
+
+      const argvJson = JSON.stringify(argv);
+      const rc = await pyodide.runPythonAsync(`
+_rc = _main(${argvJson})
+_rc
+`);
+
+      if (rc !== 0) throw new Error(`Estimator returned exit code ${rc}`);
+
+      // Read output file
+      resultBytes = pyodide.FS.readFile('/output/result.xlsx');
+      showSuccess();
+    } catch (err) {
+      showError(err.message || String(err));
+    } finally {
+      document.getElementById('run-btn').disabled = false;
+    }
+  }
+
+  // ── Download ──────────────────────────────────────────────────────────────
+  function downloadResult() {
+    if (!resultBytes) return;
+    const blob = new Blob([resultBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'oci_cost_summary.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Status helpers ────────────────────────────────────────────────────────
+  function showStatus(type, msg) {
+    document.getElementById('status-loading').style.display = type === 'loading' ? 'flex' : 'none';
+    document.getElementById('status-error').style.display   = 'none';
+    document.getElementById('status-success').style.display = 'none';
+    if (type === 'loading') document.getElementById('status-text').textContent = msg;
+  }
+  function showSuccess() {
+    document.getElementById('status-loading').style.display = 'none';
+    document.getElementById('status-error').style.display   = 'none';
+    document.getElementById('status-success').style.display = 'block';
+  }
+  function showError(msg) {
+    document.getElementById('status-loading').style.display = 'none';
+    document.getElementById('status-error').style.display   = 'flex';
+    document.getElementById('status-success').style.display = 'none';
+    document.getElementById('error-text').textContent = msg;
+  }
+  function hideStatus() {
+    document.getElementById('status-loading').style.display = 'none';
+    document.getElementById('status-error').style.display   = 'none';
+    document.getElementById('status-success').style.display = 'none';
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  initPyodide().catch(err => showError('Failed to initialise: ' + err.message));
+</script>
+</body>
+</html>

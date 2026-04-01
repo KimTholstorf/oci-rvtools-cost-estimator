@@ -1,0 +1,64 @@
+name: Update OCI Prices
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # every Monday at 06:00 UTC
+  workflow_dispatch:        # allow manual trigger
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch OCI prices and update prices.json
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request, urllib.parse, datetime
+
+          PARTS = ["B97384", "B97385", "B91961", "B91962", "B111129", "B111130"]
+          API_BASE = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
+
+          result = {"updated": datetime.date.today().isoformat(), "prices": {}}
+
+          for part in PARTS:
+              # Fetch without currencyCode filter to get all currencies in one call
+              url = f"{API_BASE}?{urllib.parse.urlencode({'partNumber': part})}"
+              with urllib.request.urlopen(url) as r:
+                  data = json.loads(r.read())
+
+              item = data["items"][0]
+              display_name = item.get("displayName", part)
+              currencies = {}
+
+              for loc in item.get("currencyCodeLocalizations", []):
+                  code = loc.get("currencyCode")
+                  for entry in loc.get("prices", []):
+                      if "value" in entry:
+                          currencies[code] = float(entry["value"])
+                          break
+
+              if not currencies:
+                  raise RuntimeError(f"No prices found for {part}")
+
+              result["prices"][part] = {"display_name": display_name, "currencies": currencies}
+              print(f"  {part}: {display_name} ({len(currencies)} currencies)")
+
+          with open("docs/prices.json", "w") as f:
+              json.dump(result, f, indent=2)
+              f.write("\n")
+
+          print(f"Updated docs/prices.json ({datetime.date.today()})")
+          PYEOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/prices.json
+          git diff --cached --quiet || git commit -m "Update OCI prices $(date +%Y-%m-%d)"
+          git push

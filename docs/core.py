@@ -34,7 +34,7 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # Version
 # =========================
 
-VERSION = "1.0.9"
+VERSION = "1.0.8"
 
 
 # =========================
