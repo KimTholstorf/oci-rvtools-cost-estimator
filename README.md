@@ -16,6 +16,15 @@
 </div>
 
 <br>
+<!--    
+<div align="center">
+  <a href="https://rvtools.oci.kim" target="_blank" rel="noopener">
+    <img src="https://visitor-badge.laobi.icu/badge?page_id=kimtholstorf.oci-rvtools.README">
+  </a>
+</div>
+
+<br>
+-->
 
 This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle Cloud Infrastructure prices, and generates an Excel file with aggregate monthly costs for all included resources.
 
@@ -199,7 +208,11 @@ oci-rvtools \
 
 ## 🍿 Demo
 
+CLI
 ![asciinema](images/demo.gif)
+
+Web-UI
+![asciinema](images/demo-web.gif)
 
 ---
 
