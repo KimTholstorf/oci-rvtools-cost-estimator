@@ -208,10 +208,12 @@ oci-rvtools \
 
 ## 🍿 Demo
 
-CLI
+### CLI
+
 ![asciinema](images/demo.gif)
 
-Web-UI
+### Web-UI
+
 ![asciinema](images/demo-web.gif)
 
 ---
