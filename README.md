@@ -25,7 +25,7 @@ Because OCI pricing scales linearly `oci-rvtools` doesn't price individual VMs. 
 
 ## 🚀 Features
 
-- **Browser-based web app** – no install required. Drop in your RVTools export on [rvtools.oci.kim](https://rvtools.oci.kim) and get the cost estimate instantly. Runs 100% browser-local via WebAssembly — nothing is uploaded, nothing leaves your device. [Read the Security & Pricacy for more.](https://rvtools.oci.kim/security.html)
+- **Browser-based web app** – no install required. Drop in your RVTools export on [rvtools.oci.kim](https://rvtools.oci.kim) and get the cost estimate instantly. Runs 100% browser-local via WebAssembly — nothing is uploaded, nothing leaves your device. Read [Security & Pricacy](https://rvtools.oci.kim/security.html) for more on this.
 - **Direct RVTools ingestion** – reads raw `RVTools_export_all.xlsx` files and ignores housekeeping VMs (`vCLS-*`).
 - **Multi-file support** – pass multiple files, a directory, or upload a `.zip` of exports in the web app to aggregate across sites.
 - **Configurable inclusion filters** – toggle powered-off VMs for CPU/RAM and powered-off disks for storage calculations independently.
