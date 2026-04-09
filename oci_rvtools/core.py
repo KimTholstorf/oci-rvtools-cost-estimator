@@ -34,7 +34,7 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # Version
 # =========================
 
-VERSION = "1.0.9"
+VERSION = "1.0.10"
 
 
 # =========================
@@ -374,16 +374,75 @@ def collect_rvtools_files(paths: Sequence[str]) -> List[Path]:
     return files
 
 
+def apply_vm_filter(
+    df: pd.DataFrame,
+    datacenters: Optional[List[str]],
+    clusters: Optional[List[str]],
+) -> pd.DataFrame:
+    """Filter vInfo rows by Datacenter and/or Cluster names (case-insensitive, AND logic between flags)."""
+    if not datacenters and not clusters:
+        return df
+
+    mask = pd.Series(True, index=df.index)
+
+    if datacenters:
+        dc_lower = [d.lower() for d in datacenters]
+        df_dc = df["Datacenter"].astype(str).str.strip().str.lower()
+        matched = set(df_dc[df_dc.isin(dc_lower)].unique())
+        for d in dc_lower:
+            if d not in matched:
+                warn(f"No VMs found for Datacenter '{d}' — check spelling and case")
+        mask &= df_dc.isin(dc_lower)
+
+    if clusters:
+        cl_lower = [c.lower() for c in clusters]
+        df_cl = df["Cluster"].astype(str).str.strip().str.lower()
+        matched = set(df_cl[df_cl.isin(cl_lower)].unique())
+        for c in cl_lower:
+            if c not in matched:
+                warn(f"No VMs found for Cluster '{c}' — check spelling and case")
+        mask &= df_cl.isin(cl_lower)
+
+    return df[mask]
+
+
+def list_datacenters_and_clusters(files: Sequence[Path]) -> None:
+    """Print all unique Datacenter and Cluster names found across the given RVTools files."""
+    topology: Dict[str, set] = {}
+    for file in files:
+        df = load_vinfo_dataframe(file)
+        if df is None:
+            continue
+        df = df[df["Cluster"].apply(_valid_cluster)]
+        for _, row in df[["Datacenter", "Cluster"]].drop_duplicates().iterrows():
+            dc = str(row["Datacenter"]).strip() or "(unknown)"
+            cl = str(row["Cluster"]).strip()
+            topology.setdefault(dc, set()).add(cl)
+    if not topology:
+        print("[WARN] No Datacenter/Cluster data found in the provided files.")
+        return
+    for dc in sorted(topology):
+        print(f"Datacenter: {dc}")
+        for cl in sorted(topology[dc]):
+            print(f"  Cluster: {cl}")
+
+
 def aggregate_from_rvtools(
     files: Sequence[Path],
     include_vms_off: bool,
     include_disks_off: bool,
+    datacenters: Optional[List[str]] = None,
+    clusters: Optional[List[str]] = None,
 ) -> AggregatedUsage:
     usage = AggregatedUsage()
     for file in files:
         info(f"Processing RVTools export: {file}")
         df = load_vinfo_dataframe(file)
         if df is None:
+            continue
+        df = apply_vm_filter(df, datacenters, clusters)
+        if df.empty:
+            warn(f"{file.name}: no VMs remain after applying datacenter/cluster filter, skipping")
             continue
         total_vcpu, ram_gb, disk_total_gb, disk_used_gb, powered_on, powered_off = aggregate_vinfo(
             df, include_vms_off, include_disks_off
@@ -609,8 +668,16 @@ def build_line_items(
 # =========================
 
 def build_metadata_rows(metadata: Dict[str, object]) -> List[Tuple[str, str, str]]:
+    filter_parts = []
+    if metadata.get("filter_datacenters"):
+        filter_parts.append(f"Datacenter: {', '.join(metadata['filter_datacenters'])}")
+    if metadata.get("filter_clusters"):
+        filter_parts.append(f"Cluster: {', '.join(metadata['filter_clusters'])}")
+    filter_value = " | ".join(filter_parts) if filter_parts else "None"
+
     return [
         ("Source Files", metadata["source_files"], ""),
+        ("Filters", filter_value, ""),
         ("Hours per Month", metadata["hours_per_month"], ""),
         ("Currency", metadata["currency"], ""),
         ("VPU", metadata["vpu"], ""),
@@ -776,14 +843,14 @@ def write_output(
             if item.category == "vpu":
                 if storage_row_index is None:
                     raise ValueError("Storage row must be written before VPU row.")
-                part_cell.value = f"=C{storage_row_index}*B$5"
+                part_cell.value = f"=C{storage_row_index}*B$6"
                 instance_cell.value = 1.0
                 usage_cell.value = 1.0
             else:
                 part_cell.value = roundup_formula(item.raw_base_quantity)
                 instance_cell.value = 1.0
                 if item.category in {"ocpu", "memory"}:
-                    usage_cell.value = "=B$3"
+                    usage_cell.value = "=B$4"
                 elif item.category == "storage":
                     usage_cell.value = 1.0
                     storage_row_index = current_row
@@ -865,6 +932,27 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         action="store_false",
         help="Exclude powered-off VMs when summing disk usage.",
     )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        default=False,
+        dest="list_topology",
+        help="List all Datacenter and Cluster names found in the input file(s) and exit.",
+    )
+    parser.add_argument(
+        "--datacenter",
+        nargs="+",
+        metavar="NAME",
+        default=None,
+        help='Only include VMs in the given Datacenter(s). Quote names with spaces e.g. "DC East".',
+    )
+    parser.add_argument(
+        "--cluster",
+        nargs="+",
+        metavar="NAME",
+        default=None,
+        help='Only include VMs in the given Cluster(s). Quote names with spaces e.g. "Cluster East 01".',
+    )
     return parser.parse_args(argv)
 
 
@@ -876,10 +964,25 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         print("[ERROR] No RVTools Excel exports found for the given paths.", file=sys.stderr)
         return 1
 
+    if args.list_topology:
+        list_datacenters_and_clusters(rvtools_files)
+        return 0
+
+    if args.datacenter:
+        info(f"Filtering by Datacenter(s): {', '.join(args.datacenter)}")
+    if args.cluster:
+        info(f"Filtering by Cluster(s): {', '.join(args.cluster)}")
+
     info(f"Powered-off VMs {'included' if args.include_poweredoff_vms else 'excluded'} in CPU/RAM totals.")
     info(f"Powered-off disks {'included' if args.include_poweredoff_disks else 'excluded'} in disk totals.")
 
-    usage = aggregate_from_rvtools(rvtools_files, args.include_poweredoff_vms, args.include_poweredoff_disks)
+    usage = aggregate_from_rvtools(
+        rvtools_files,
+        args.include_poweredoff_vms,
+        args.include_poweredoff_disks,
+        datacenters=args.datacenter,
+        clusters=args.cluster,
+    )
     if not usage.source_files:
         print("[ERROR] No usable vInfo data found in the provided RVTools exports.", file=sys.stderr)
         return 1
@@ -909,6 +1012,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     metadata = {
         "source_files": ", ".join(usage.source_files),
+        "filter_datacenters": args.datacenter or [],
+        "filter_clusters": args.cluster or [],
         "hours_per_month": str(args.hours),
         "currency": args.currency.upper(),
         "vpu": str(clamped_vpu),

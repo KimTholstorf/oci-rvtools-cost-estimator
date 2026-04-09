@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oci-rvtools"
-version = "1.0.9"
+version = "1.0.10"
 description = "Convert RVTools Excel exports into an Oracle Cloud (OCI) monthly cost estimate workbook."
 readme = "README.md"
 license = { text = "MIT" }

@@ -38,6 +38,7 @@ Because OCI pricing scales linearly `oci-rvtools` doesn't price individual VMs. 
 - **Direct RVTools ingestion** – reads raw `RVTools_export_all.xlsx` files and ignores housekeeping VMs (`vCLS-*`).
 - **Multi-file support** – pass multiple files, a directory, or upload a `.zip` of exports in the web app to aggregate across sites.
 - **Configurable inclusion filters** – toggle powered-off VMs for CPU/RAM and powered-off disks for storage calculations independently.
+- **Datacenter and Cluster filtering** – list all Datacenters and Clusters in the input, then scope the estimate to a specific subset using `--datacenter` and `--cluster`.
 - **Automatic unit handling** – converts MiB totals to GiB, rounds quantities up to whole units, and maps 2 vCPUs to 1 OCPU.
 - **Live pricing lookup** – fetches list prices for configurable OCI part numbers via the [OCI pricing API](https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/).
 - **Console logging** – prints aggregation totals, pricing inputs, and powered-on/off inclusion choices to the console.
@@ -168,8 +169,13 @@ All quantities are rounded up to whole units before pricing. Block Volume Perfor
 | `--include-poweredoff-vms` | Include powered-off VMs when summing vCPU and RAM. |
 | `--include-poweredoff-disks` | Include powered-off VMs when summing disk usage (default). |
 | `--exclude-poweredoff-disks` | Ignore powered-off VMs when summing disk usage. |
+| `--list` | Print all Datacenter and Cluster names found in the input file(s) and exit. |
+| `--datacenter NAME [NAME ...]` | Only include VMs in the given Datacenter(s). Quote names with spaces e.g. `"DC East"`. |
+| `--cluster NAME [NAME ...]` | Only include VMs in the given Cluster(s). Quote names with spaces e.g. `"Cluster East 01"`. |
 
 Paths can point to folders; the script recursively picks up `.xlsx` files (skipping `~$` temp files). Duplicate files are de-duplicated.
+
+When both `--datacenter` and `--cluster` are specified, a VM must match both conditions (AND logic). Multiple values within each flag are matched with OR logic.
 
 ---
 
