@@ -37,8 +37,8 @@ Because OCI pricing scales linearly `oci-rvtools` doesn't price individual VMs. 
 - **Browser-based web app** – no install required. Drop in your RVTools export on [oci-rvtools.com](https://oci-rvtools.com) and get the cost estimate instantly. Runs 100% browser-local via WebAssembly — nothing is uploaded, nothing leaves your device. Read [Security & Privacy](https://oci-rvtools.com/security.html) for more on this.
 - **Direct RVTools ingestion** – reads raw `RVTools_export_all.xlsx` files and ignores housekeeping VMs (`vCLS-*`).
 - **Multi-file support** – pass multiple files, a directory, or upload a `.zip` of exports in the web app to aggregate across sites.
+- **Datacenter and Cluster filtering** – list all Datacenters and Clusters in the input, then scope the estimate to a specific subset of these.
 - **Configurable inclusion filters** – toggle powered-off VMs for CPU/RAM and powered-off disks for storage calculations independently.
-- **Datacenter and Cluster filtering** – list all Datacenters and Clusters in the input, then scope the estimate to a specific subset using `--datacenter` and `--cluster`.
 - **Automatic unit handling** – converts MiB totals to GiB, rounds quantities up to whole units, and maps 2 vCPUs to 1 OCPU.
 - **Live pricing lookup** – fetches list prices for configurable OCI part numbers via the [OCI pricing API](https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/).
 - **Console logging** – prints aggregation totals, pricing inputs, and powered-on/off inclusion choices to the console.
@@ -171,9 +171,9 @@ All quantities are rounded up to whole units before pricing. Block Volume Perfor
 | `--exclude-poweredoff-disks` | Ignore powered-off VMs when summing disk usage. |
 | `--list` | Print all Datacenter and Cluster names found in the input file(s) and exit. |
 | `--datacenter NAME [NAME ...]` | Only include VMs in the given Datacenter(s). Quote names with spaces e.g. `"DC East"`. |
-| `--cluster NAME [NAME ...]` | Only include VMs in the given Cluster(s). Quote names with spaces e.g. `"Cluster East 01"`. |
+| `--cluster NAME [NAME ...]` | Only include VMs in the given Cluster(s). Quote names with spaces e.g. `"Production-01"`. |
 
-Paths can point to folders; the script recursively picks up `.xlsx` files (skipping `~$` temp files). Duplicate files are de-duplicated.
+Paths can point to folders and the script recursively picks up `.xlsx` files.
 
 When both `--datacenter` and `--cluster` are specified, a VM must match both conditions (AND logic). Multiple values within each flag are matched with OR logic.
 
@@ -186,16 +186,25 @@ When both `--datacenter` and `--cluster` are specified, a VM must match both con
 oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx
 
+# List Datacenter and Clusters in input file
+oci-rvtools \
+  --rvtools ./customer/RVTools_export_all.xlsx \
+  --list
+  
+# Use Datecenter and Cluster filtering
+oci-rvtools \
+  --rvtools ./customer/RVTools_export_all.xlsx \
+  --datacenter DC-NAME --cluster CLUSTER-NAME
+  
 # Aggregate multiple exports and change output name
 oci-rvtools \
   --rvtools ./customer/site-a.xlsx ./customer/site-b.xlsx \
   --output reports/oci_cost_summary.xlsx
 
-# Include powered-off VM CPU/RAM and exclude their disks
+# Include powered-off VM CPU/RAM
 oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \
   --include-poweredoff-vms \
-  --exclude-poweredoff-disks
 
 # Override pricing part numbers (VM.Standard.E6.Flex) and hours per month
 oci-rvtools \
@@ -226,9 +235,8 @@ oci-rvtools \
 
 ## ⚠️ Notes
 
-- The CLI relies on real-time pricing data; expect run failures if the Oracle pricing API is unreachable or if your machine is not connected to the internet.
-- Pricing logic assumes USD list rates identical across regions. Adjust currency or part numbers as needed.
-- Generated workbooks contain formulas and formatting; Excel recalculates automatically when opened.
+- The CLI relies on real-time pricing data, so expect run failures if the Oracle pricing API is unreachable or if your machine is not connected to the internet.
+- Generated Excel workbooks contain formulas and formatting. Excel recalculates automatically when opened.
 
 ---
 
