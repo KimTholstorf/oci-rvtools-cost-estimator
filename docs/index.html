@@ -163,6 +163,74 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* Filter step */
+    .filter-placeholder {
+      font-size: 0.87rem;
+      color: #999;
+      font-style: italic;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .filter-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .btn-link {
+      background: none;
+      border: none;
+      color: #C74634;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+    }
+    .btn-link:hover { text-decoration: underline; }
+    .dc-group { margin-bottom: 0.85rem; }
+    .dc-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #555;
+      padding: 0.25rem 0;
+    }
+    .dc-header input[type=checkbox] { width: 15px; height: 15px; accent-color: #C74634; flex-shrink: 0; }
+    .cluster-list {
+      margin-left: 1.6rem;
+      margin-top: 0.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .cluster-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      color: #555;
+    }
+    .cluster-item input[type=checkbox] { width: 14px; height: 14px; accent-color: #C74634; flex-shrink: 0; }
+    .filter-scroll {
+      max-height: 260px;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      padding: 0.75rem;
+    }
+    .mini-spinner {
+      width: 13px; height: 13px;
+      border: 2px solid #ddd;
+      border-top-color: #999;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
     /* Prices info */
     .prices-note {
       font-size: 0.78rem;
@@ -215,9 +283,27 @@
     <input type="file" id="file-input" accept=".xlsx,.zip" />
   </div>
 
-  <!-- Step 2: Options -->
+  <!-- Step 2: Filters (optional) -->
   <div class="card">
-    <h2>2 — Options</h2>
+    <h2>2 — Filters <span style="font-weight:400;color:#aaa;font-size:0.75rem;text-transform:none;letter-spacing:0">optional</span></h2>
+    <div id="filter-placeholder" class="filter-placeholder">Upload a file in step 1 to see available Datacenters and Clusters.</div>
+    <div id="filter-loading" style="display:none" class="filter-placeholder"><span class="mini-spinner"></span> Scanning file…</div>
+    <div id="filter-content" style="display:none">
+      <div class="filter-actions">
+        <button class="btn-link" onclick="setAllFilters(true)">Select all</button>
+        <span style="color:#ddd">|</span>
+        <button class="btn-link" onclick="setAllFilters(false)">Deselect all</button>
+      </div>
+      <div class="filter-scroll">
+        <div id="filter-groups" style="display:grid;grid-template-columns:1fr 1fr;gap:0 1.5rem;"></div>
+      </div>
+      <p class="prices-note" style="margin-top:0.75rem">All selected = no filter applied. Deselect to exclude.</p>
+    </div>
+  </div>
+
+  <!-- Step 3: Options -->
+  <div class="card">
+    <h2>3 — Options</h2>
     <div class="options-grid">
       <div class="field">
         <label for="hours">Hours per month</label>
@@ -262,9 +348,9 @@
     </p>
   </div>
 
-  <!-- Step 3: Generate -->
+  <!-- Step 4: Generate -->
   <div class="card">
-    <h2>3 — Generate</h2>
+    <h2>4 — Generate</h2>
     <button class="btn btn-primary" id="run-btn" disabled onclick="runEstimator()">
       Generate cost estimate
     </button>
@@ -327,6 +413,7 @@
     nameEl.textContent = file.name;
     nameEl.style.display = 'block';
     updateRunButton();
+    if (pyodideReady) scanTopology();
   }
 
   function updateRunButton() {
@@ -400,6 +487,7 @@ PricingClient.get_price = _patched_get_price
     pyodideReady = true;
     hideInitStatus();
     updateRunButton();
+    if (uploadedFile) scanTopology();
   }
 
   function loadScript(src) {
@@ -458,6 +546,10 @@ len(xlsx_files)
         '--currency', document.getElementById('currency').value,
         '--vpu',      document.getElementById('vpu').value,
       ];
+      const selectedClusters = getSelectedClusters();
+      if (selectedClusters.length > 0) {
+        argv.push('--cluster', ...selectedClusters);
+      }
       if (document.getElementById('shape').value === 'e6') {
         argv.push('--ocpu-part', 'B111129', '--memory-part', 'B111130');
       }
@@ -493,7 +585,7 @@ _rc
     a.click();
     URL.revokeObjectURL(url);
 
-    // Reset dropzone and hide success bar
+    // Reset dropzone, filter UI, and hide success bar
     uploadedFile = null;
     resultBytes  = null;
     dropzone.classList.remove('has-file');
@@ -501,8 +593,113 @@ _rc
     nameEl.textContent  = '';
     nameEl.style.display = 'none';
     document.getElementById('file-input').value = '';
+    document.getElementById('filter-placeholder').textContent = 'Upload a file in step 1 to see available Datacenters and Clusters.';
+    document.getElementById('filter-placeholder').style.display = 'flex';
+    document.getElementById('filter-content').style.display = 'none';
+    document.getElementById('filter-groups').innerHTML = '';
     hideRunStatus();
     updateRunButton();
+  }
+
+  // ── Topology scan & filter checkboxes ────────────────────────────────────
+  async function scanTopology() {
+    if (!uploadedFile || !pyodideReady) return;
+    document.getElementById('filter-placeholder').style.display = 'none';
+    document.getElementById('filter-loading').style.display = 'flex';
+    document.getElementById('filter-content').style.display = 'none';
+    try {
+      const buf = await uploadedFile.arrayBuffer();
+      let scanPath;
+      if (uploadedFile.name.endsWith('.zip')) {
+        pyodide.FS.writeFile('/input.zip', new Uint8Array(buf));
+        await pyodide.runPythonAsync(`
+import zipfile, os
+os.makedirs('/input', exist_ok=True)
+with zipfile.ZipFile('/input.zip') as zf:
+    for name in [n for n in zf.namelist() if n.endswith('.xlsx') and not n.startswith('__MACOSX')]:
+        with open('/input/' + os.path.basename(name), 'wb') as f:
+            f.write(zf.read(name))
+`);
+        scanPath = '/input';
+      } else {
+        pyodide.FS.writeFile('/input_scan.xlsx', new Uint8Array(buf));
+        scanPath = '/input_scan.xlsx';
+      }
+      const topoJson = await pyodide.runPythonAsync(`
+import json as _json
+from oci_rvtools.core import load_vinfo_dataframe, _valid_cluster, collect_rvtools_files
+_topo = {}
+for _f in collect_rvtools_files(['${scanPath}']):
+    _df = load_vinfo_dataframe(_f)
+    if _df is None:
+        continue
+    _df2 = _df[_df["Cluster"].apply(_valid_cluster)]
+    for _, _row in _df2[["Datacenter", "Cluster"]].drop_duplicates().iterrows():
+        _dc = str(_row["Datacenter"]).strip() or "(unknown)"
+        _cl = str(_row["Cluster"]).strip()
+        _topo.setdefault(_dc, set()).add(_cl)
+_json.dumps({_dc: sorted(list(_topo[_dc])) for _dc in sorted(_topo)})
+`);
+      populateFilterCheckboxes(JSON.parse(topoJson));
+    } catch (err) {
+      document.getElementById('filter-placeholder').textContent = 'Could not read topology from file.';
+      document.getElementById('filter-placeholder').style.display = 'flex';
+    } finally {
+      document.getElementById('filter-loading').style.display = 'none';
+    }
+  }
+
+  function populateFilterCheckboxes(topology) {
+    const container = document.getElementById('filter-groups');
+    container.innerHTML = '';
+    for (const [dc, clusters] of Object.entries(topology)) {
+      const dcId = 'dc-' + dc.replace(/\W/g, '_');
+      const group = document.createElement('div');
+      group.className = 'dc-group';
+      const header = document.createElement('div');
+      header.className = 'dc-header';
+      header.innerHTML = `<input type="checkbox" id="${dcId}" checked><label for="${dcId}">${dc}</label>`;
+      group.appendChild(header);
+      const clList = document.createElement('div');
+      clList.className = 'cluster-list';
+      for (const cl of clusters) {
+        const clId = 'cl-' + (dc + '-' + cl).replace(/\W/g, '_');
+        const item = document.createElement('div');
+        item.className = 'cluster-item';
+        item.innerHTML = `<input type="checkbox" class="cluster-cb" data-dc="${dcId}" id="${clId}" checked><label for="${clId}">${cl}</label>`;
+        clList.appendChild(item);
+      }
+      group.appendChild(clList);
+      container.appendChild(group);
+      const dcCb = header.querySelector('input');
+      dcCb.addEventListener('change', () => {
+        clList.querySelectorAll('.cluster-cb').forEach(cb => cb.checked = dcCb.checked);
+      });
+      clList.querySelectorAll('.cluster-cb').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const all = [...clList.querySelectorAll('.cluster-cb')];
+          const n = all.filter(c => c.checked).length;
+          dcCb.indeterminate = n > 0 && n < all.length;
+          dcCb.checked = n > 0;
+        });
+      });
+    }
+    document.getElementById('filter-content').style.display = 'block';
+  }
+
+  function setAllFilters(checked) {
+    document.querySelectorAll('#filter-groups input[type=checkbox]').forEach(cb => {
+      cb.checked = checked;
+      cb.indeterminate = false;
+    });
+  }
+
+  function getSelectedClusters() {
+    const all = [...document.querySelectorAll('#filter-groups .cluster-cb')];
+    if (all.length === 0) return [];
+    const checked = all.filter(cb => cb.checked);
+    if (checked.length === all.length) return []; // all selected = no filter
+    return checked.map(cb => document.querySelector(`label[for="${cb.id}"]`).textContent);
   }
 
   // ── Status helpers ────────────────────────────────────────────────────────
