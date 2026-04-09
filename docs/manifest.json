@@ -1,0 +1,12 @@
+{
+  "name": "OCI RVTools Cost Estimator",
+  "short_name": "OCI RVTools",
+  "description": "VMware RVTools Export to Oracle Cloud monthly cost estimate — 100% browser-local via WebAssembly",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#C74634",
+  "background_color": "#f5f7fa",
+  "display": "standalone",
+  "start_url": "/"
+}
