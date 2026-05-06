@@ -34,7 +34,7 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # Version
 # =========================
 
-VERSION = "1.0.10"
+VERSION = "1.0.11"
 
 
 # =========================
@@ -315,10 +315,16 @@ def aggregate_vinfo(df: pd.DataFrame, include_vms_off: bool, include_disks_off: 
     # Remove RVTools housekeeping VMs
     df = df[~df["VM"].astype(str).str.startswith("vCLS", na=False)]
 
-    # Keep only rows with valid cluster labels
-    df = df[df["Cluster"].apply(_valid_cluster)]
-    if df.empty:
-        return 0.0, 0.0, 0.0, 0.0, 0, 0
+    # Keep only rows with valid cluster labels — but only when the file actually
+    # has cluster data. Files exported without DC/Cluster columns are backfilled
+    # with "" so _valid_cluster would filter every row out, producing all zeros.
+    # If no valid cluster value exists anywhere, skip the filter and include all VMs.
+    if df["Cluster"].apply(_valid_cluster).any():
+        df = df[df["Cluster"].apply(_valid_cluster)]
+        if df.empty:
+            return 0.0, 0.0, 0.0, 0.0, 0, 0
+    else:
+        info("No valid cluster data detected — cluster filter skipped, all VMs included")
 
     powered_mask = df["Powerstate"].astype(str).str.lower() == "poweredon"
     powered_on_count = int(powered_mask.sum())

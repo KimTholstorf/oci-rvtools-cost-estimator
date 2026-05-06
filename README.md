@@ -213,6 +213,12 @@ oci-rvtools \
   --ocpu-part B111129 \
   --memory-part B111130
 
+# Use VM.Standard.E6.Ax.Flex shape
+oci-rvtools \
+  --rvtools ./customer/RVTools_export_all.xlsx \
+  --ocpu-part B112530 \
+  --memory-part B112531
+
 # Ultra High Performance for Storage
 oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \

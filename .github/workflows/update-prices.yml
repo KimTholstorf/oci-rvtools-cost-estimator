@@ -20,7 +20,7 @@ jobs:
           python3 - <<'PYEOF'
           import json, urllib.request, urllib.parse, datetime
 
-          PARTS = ["B97384", "B97385", "B91961", "B91962", "B111129", "B111130"]
+          PARTS = ["B97384", "B97385", "B91961", "B91962", "B111129", "B111130", "B112530", "B112531"]
           API_BASE = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 
           result = {"updated": datetime.date.today().isoformat(), "prices": {}}

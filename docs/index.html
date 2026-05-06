@@ -324,6 +324,7 @@
         <select id="shape">
           <option value="e5" selected>VM.Standard.E5.Flex</option>
           <option value="e6">VM.Standard.E6.Flex</option>
+          <option value="e6ax">VM.Standard.E6.Ax.Flex</option>
         </select>
       </div>
       <div class="field">
@@ -556,6 +557,8 @@ len(xlsx_files)
       }
       if (document.getElementById('shape').value === 'e6') {
         argv.push('--ocpu-part', 'B111129', '--memory-part', 'B111130');
+      } else if (document.getElementById('shape').value === 'e6ax') {
+        argv.push('--ocpu-part', 'B112530', '--memory-part', 'B112531');
       }
       if (document.getElementById('include-off-vms').checked)   argv.push('--include-poweredoff-vms');
       if (!document.getElementById('include-off-disks').checked) argv.push('--exclude-poweredoff-disks');
@@ -656,6 +659,16 @@ _json.dumps({_dc: sorted(list(_topo[_dc])) for _dc in sorted(_topo)})
   function populateFilterCheckboxes(topology) {
     const container = document.getElementById('filter-groups');
     container.innerHTML = '';
+
+    if (Object.keys(topology).length === 0) {
+      // No DC/Cluster data in the file — show informational note, skip checkbox UI
+      document.getElementById('filter-placeholder').textContent =
+        'No Datacenter/Cluster data found in this file — all VMs will be included.';
+      document.getElementById('filter-placeholder').style.display = 'flex';
+      document.getElementById('filter-content').style.display = 'none';
+      return;
+    }
+
     for (const [dc, clusters] of Object.entries(topology)) {
       const dcId = 'dc-' + dc.replace(/\W/g, '_');
       const group = document.createElement('div');
