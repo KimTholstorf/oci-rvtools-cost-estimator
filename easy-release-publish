@@ -46,6 +46,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ── Sync remote prices.json if the weekly workflow has pushed it ahead of local ──
+git fetch origin main --quiet
+PRICES_AHEAD=$(git log HEAD..origin/main --oneline -- docs/prices.json | wc -l | tr -d ' ')
+if [ "$PRICES_AHEAD" -gt 0 ]; then
+    echo "ℹ️  prices.json has been updated on remote by the weekly workflow — pulling it in before release..."
+    git stash --quiet
+    git pull --rebase origin main --quiet
+    git stash pop --quiet
+    echo "✅ prices.json synced — continuing with release"
+    echo ""
+fi
+
 # ── Extract current versions from both source files ───────────────────────────
 APP_VERSION=$(grep 'VERSION = ' "$PYTHON_APP" | sed 's/.*VERSION = "\(.*\)".*/\1/')
 PYPROJECT_VERSION=$(grep '^version = ' "$PYPROJECT" | sed 's/version = "\(.*\)"/\1/')

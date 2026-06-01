@@ -34,7 +34,7 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # Version
 # =========================
 
-VERSION = "1.0.11"
+VERSION = "1.1.0"
 
 
 # =========================
@@ -159,6 +159,37 @@ HEADER_ROW_HEIGHT = 40
 DEFAULT_ROW_HEIGHT = 20
 DISCLAIMER_ROW_HEIGHT = 80
 
+VM_DETAIL_HEADERS = [
+    "VM Name",
+    "Powerstate",
+    "OCPU",
+    "RAM (GB)",
+    "Disk Provisioned (GB)",
+    "Disk Used (GB)",
+    "OCPU Cost ({currency})",
+    "RAM Cost ({currency})",
+    "Disk Prov Cost ({currency})",
+    "Disk Used Cost ({currency})",
+    "Total Monthly - Prov ({currency})",
+    "Total Monthly - Used ({currency})",
+    "Total Yearly - Prov ({currency})",
+    "Total Yearly - Used ({currency})",
+    "Note",
+]
+
+VM_DETAIL_COL_WIDTHS = {
+    "A": 34, "B": 14, "C": 10, "D": 12,
+    "E": 22, "F": 18, "G": 22, "H": 22,
+    "I": 24, "J": 24, "K": 28, "L": 26,
+    "M": 28, "N": 26, "O": 16,
+}
+
+VM_DETAIL_NOTE = (
+    "ⓘ  The aggregate totals on the total_disk and used_disk sheets are calculated by "
+    "summing the per-VM values in this sheet. Editing a value here will automatically "
+    "update the monthly cost totals."
+)
+
 
 # =========================
 # Excel Styles
@@ -166,7 +197,13 @@ DISCLAIMER_ROW_HEIGHT = 80
 
 TITLE_FONT = Font(bold=True, size=14)
 HEADER_FILL = PatternFill(start_color="FFDCE6F1", end_color="FFDCE6F1", fill_type="solid")
+SECTION_LABEL_FILL = PatternFill(start_color="FFB8CCE4", end_color="FFB8CCE4", fill_type="solid")
 DISCLAIMER_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
+
+SECTION_LABELS = {
+    "total_disk": "Total Provisioned Disk",
+    "used_disk":  "Used Disk",
+}
 
 
 # =========================
@@ -295,6 +332,17 @@ def _valid_cluster(value: object) -> bool:
     return s.lower() not in INVALID_CLUSTER_VALUES
 
 
+def _prepare_vinfo_df(df: pd.DataFrame, verbose: bool = True) -> pd.DataFrame:
+    """Remove vCLS housekeeping VMs and apply cluster filter when cluster data exists."""
+    df = df.copy()
+    df = df[~df["VM"].astype(str).str.startswith("vCLS", na=False)]
+    if df["Cluster"].apply(_valid_cluster).any():
+        df = df[df["Cluster"].apply(_valid_cluster)]
+    elif verbose:
+        info("No valid cluster data detected — cluster filter skipped, all VMs included")
+    return df
+
+
 @dataclass
 class AggregatedUsage:
     total_vcpu: float = 0.0
@@ -304,27 +352,16 @@ class AggregatedUsage:
     powered_on_vms: int = 0
     powered_off_vms: int = 0
     source_files: List[str] = field(default_factory=list)
+    vm_dataframe: Optional[pd.DataFrame] = field(default=None)
 
 
 def aggregate_vinfo(df: pd.DataFrame, include_vms_off: bool, include_disks_off: bool) -> Tuple[float, float, float, float, int, int]:
     if df is None or df.empty:
         return 0.0, 0.0, 0.0, 0.0, 0, 0
 
-    df = df.copy()
-
-    # Remove RVTools housekeeping VMs
-    df = df[~df["VM"].astype(str).str.startswith("vCLS", na=False)]
-
-    # Keep only rows with valid cluster labels — but only when the file actually
-    # has cluster data. Files exported without DC/Cluster columns are backfilled
-    # with "" so _valid_cluster would filter every row out, producing all zeros.
-    # If no valid cluster value exists anywhere, skip the filter and include all VMs.
-    if df["Cluster"].apply(_valid_cluster).any():
-        df = df[df["Cluster"].apply(_valid_cluster)]
-        if df.empty:
-            return 0.0, 0.0, 0.0, 0.0, 0, 0
-    else:
-        info("No valid cluster data detected — cluster filter skipped, all VMs included")
+    df = _prepare_vinfo_df(df)
+    if df.empty:
+        return 0.0, 0.0, 0.0, 0.0, 0, 0
 
     powered_mask = df["Powerstate"].astype(str).str.lower() == "poweredon"
     powered_on_count = int(powered_mask.sum())
@@ -441,6 +478,7 @@ def aggregate_from_rvtools(
     clusters: Optional[List[str]] = None,
 ) -> AggregatedUsage:
     usage = AggregatedUsage()
+    vm_frames: List[pd.DataFrame] = []
     for file in files:
         info(f"Processing RVTools export: {file}")
         df = load_vinfo_dataframe(file)
@@ -450,6 +488,9 @@ def aggregate_from_rvtools(
         if df.empty:
             warn(f"{file.name}: no VMs remain after applying datacenter/cluster filter, skipping")
             continue
+        detail_df = _prepare_vinfo_df(df, verbose=False)
+        if not detail_df.empty:
+            vm_frames.append(detail_df)
         total_vcpu, ram_gb, disk_total_gb, disk_used_gb, powered_on, powered_off = aggregate_vinfo(
             df, include_vms_off, include_disks_off
         )
@@ -460,6 +501,9 @@ def aggregate_from_rvtools(
         usage.powered_on_vms += powered_on
         usage.powered_off_vms += powered_off
         usage.source_files.append(str(file))
+
+    if vm_frames:
+        usage.vm_dataframe = pd.concat(vm_frames, ignore_index=True)
 
     return usage
 
@@ -793,11 +837,128 @@ def append_advisory(ws, total_row: int) -> Tuple[int, int]:
     return quote_row, disclaimer_row
 
 
+def write_vm_detail_sheet(
+    wb,
+    vm_df: pd.DataFrame,
+    metadata: Dict[str, object],
+    currency: str,
+    include_vms_off: bool,
+    include_disks_off: bool,
+) -> None:
+    """Append a 'VM Details' sheet with one row per VM and per-VM cost formulas."""
+    if vm_df is None or vm_df.empty:
+        return
+
+    ws = wb.create_sheet(title="VM Details")
+
+    # Compute cross-sheet row references into 'total_disk'
+    meta_rows = build_metadata_rows(metadata)
+    n_meta = len(meta_rows)
+    hours_row      = 2 + next(i for i, (k, _, _) in enumerate(meta_rows) if k == "Hours per Month")
+    vpu_meta_row   = 2 + next(i for i, (k, _, _) in enumerate(meta_rows) if k == "VPU")
+    data_start_ref = 2 + n_meta + 3   # title(1) + metadata(n_meta rows starting at 2) + blank + section_label + header
+    ocpu_row  = data_start_ref         # OCPU line item row in total_disk
+    ram_row   = data_start_ref + 1     # Memory line item row
+    stor_row  = data_start_ref + 2     # Storage line item row
+    vpu_row   = data_start_ref + 3     # VPU line item row
+
+    td = "Cost Summary"  # source sheet name
+    ocpu_price = f"'{td}'!F${ocpu_row}"       # OCPU unit price
+    ram_price  = f"'{td}'!F${ram_row}"        # RAM unit price
+    stor_price = f"'{td}'!F${stor_row}"       # storage unit price per GB
+    vpu_pgb    = f"'{td}'!B${vpu_meta_row}"   # VPU per GB (metadata value)
+    vpu_price  = f"'{td}'!F${vpu_row}"        # VPU unit price
+
+    # Disk cost per GB = storage_price + vpu_per_gb * vpu_price
+    disk_cost_per_gb = f"({stor_price}+{vpu_pgb}*{vpu_price})"
+
+    for col, width in VM_DETAIL_COL_WIDTHS.items():
+        ws.column_dimensions[col].width = width
+
+    n_cols = len(VM_DETAIL_HEADERS)
+
+    # Row 1: column headers
+    headers = [h.format(currency=currency) for h in VM_DETAIL_HEADERS]
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.fill = HEADER_FILL
+    ws.row_dimensions[1].height = HEADER_ROW_HEIGHT
+
+    # Row 2: rounding note — visible immediately without scrolling
+    note_cell = ws.cell(row=2, column=1, value=VM_DETAIL_NOTE)
+    note_cell.font = Font(italic=True, color="00888888")
+    note_cell.alignment = Alignment(wrap_text=True, vertical="center")
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.row_dimensions[2].height = 36
+
+    # Sort by VM name (case-insensitive); data starts at row 3
+    df = vm_df.sort_values("VM", key=lambda s: s.str.lower()).reset_index(drop=True)
+
+    for idx, row_data in df.iterrows():
+        r = int(idx) + 3  # Excel row (row 1=headers, row 2=note, row 3+ = data)
+
+        powerstate     = str(row_data["Powerstate"])
+        is_powered_off = powerstate.strip().lower() != "poweredon"
+
+        cpus      = float(pd.to_numeric(row_data["CPUs"],                      errors="coerce") or 0)
+        mem_mib   = float(pd.to_numeric(row_data["Memory"],                    errors="coerce") or 0)
+        total_mib = float(pd.to_numeric(row_data["Total disk capacity MiB"],   errors="coerce") or 0)
+        prov_mib  = float(pd.to_numeric(row_data["Provisioned MiB"],           errors="coerce") or 0)
+        used_mib  = float(pd.to_numeric(row_data["In Use MiB"],                errors="coerce") or 0)
+
+        eff_prov_mib = total_mib if total_mib > 0 else prov_mib
+
+        ocpu_val      = math.ceil(cpus / 2.0)
+        ram_gb_val    = math.ceil(mem_mib / 1024.0)
+        disk_prov_val = math.ceil(eff_prov_mib * MIB_TO_GB)
+        disk_used_val = math.ceil(used_mib * MIB_TO_GB)
+
+        include_cpu_ram = not is_powered_off or include_vms_off
+        include_disk    = not is_powered_off or include_disks_off
+
+        # Columns A–F: raw values
+        ws.cell(row=r, column=1,  value=str(row_data["VM"]))
+        ws.cell(row=r, column=2,  value=powerstate)
+        ws.cell(row=r, column=3,  value=ocpu_val)
+        ws.cell(row=r, column=4,  value=ram_gb_val)
+        ws.cell(row=r, column=5,  value=disk_prov_val)
+        ws.cell(row=r, column=6,  value=disk_used_val)
+
+        # Columns G–J: cost formulas (or 0 when excluded by power-state flags)
+        if include_cpu_ram:
+            ws.cell(row=r, column=7,  value=f"=C{r}*'{td}'!B${hours_row}*{ocpu_price}")
+            ws.cell(row=r, column=8,  value=f"=D{r}*'{td}'!B${hours_row}*{ram_price}")
+        else:
+            ws.cell(row=r, column=7,  value=0)
+            ws.cell(row=r, column=8,  value=0)
+
+        if include_disk:
+            ws.cell(row=r, column=9,  value=f"=E{r}*{disk_cost_per_gb}")
+            ws.cell(row=r, column=10, value=f"=F{r}*{disk_cost_per_gb}")
+        else:
+            ws.cell(row=r, column=9,  value=0)
+            ws.cell(row=r, column=10, value=0)
+
+        # Columns K–N: totals
+        ws.cell(row=r, column=11, value=f"=G{r}+H{r}+I{r}")   # Total monthly prov
+        ws.cell(row=r, column=12, value=f"=G{r}+H{r}+J{r}")   # Total monthly used
+        ws.cell(row=r, column=13, value=f"=K{r}*12")           # Total yearly prov
+        ws.cell(row=r, column=14, value=f"=L{r}*12")           # Total yearly used
+
+        # Column O: note
+        ws.cell(row=r, column=15, value="Powered Off" if is_powered_off else "")
+
+        ws.row_dimensions[r].height = DEFAULT_ROW_HEIGHT
+
+
 def write_output(
     output_path: Path,
     metadata: Dict[str, object],
     sheets: Dict[str, List[LineItem]],
     currency: str,
+    vm_df: Optional[pd.DataFrame] = None,
 ) -> None:
     info(f"Writing output to {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -810,30 +971,71 @@ def write_output(
             raw_str = "0"
         return f"=ROUNDUP({raw_str},0)"
 
-    wb = Workbook()
-    first_sheet = True
-    for sheet_name, items in sheets.items():
-        if first_sheet:
-            ws = wb.active
-            ws.title = sheet_name
-            first_sheet = False
+    # Pre-compute vm_details SUM range so total_disk/used_disk can reference it.
+    # vm_details data: row 1=headers, row 2=note, row 3..N=VMs.
+    _vd_start = 3
+    _use_vd_sums = vm_df is not None and not vm_df.empty
+    _vd_end = 2 + len(vm_df) if _use_vd_sums else None
+
+    # Column letters in vm_details for each aggregate category
+    _vd_col = {"ocpu": "C", "memory": "D"}  # storage col depends on sheet (E=prov, F=used)
+
+    def _part_qty_formula(category: str, sheet_name: str, raw_quantity: float) -> str:
+        """Return a SUM formula referencing vm_details, or ROUNDUP fallback."""
+        if not _use_vd_sums:
+            return roundup_formula(raw_quantity)
+        if category == "storage":
+            col = "E" if sheet_name == "total_disk" else "F"
         else:
-            ws = wb.create_sheet(title=sheet_name)
+            col = _vd_col.get(category)
+        if col is None:
+            return roundup_formula(raw_quantity)
+        return f"=SUM('VM Details'!{col}{_vd_start}:{col}{_vd_end})"
 
-        ws.insert_rows(1)
-        title_text = f"Oracle Investment Proposal (as of {datetime.now().strftime('%m/%d/%Y')})"
-        title_cell = ws.cell(row=1, column=1, value=title_text)
-        title_cell.font = TITLE_FONT
-        title_cell.alignment = Alignment(horizontal="left", vertical="center")
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=TABLE_COLUMN_COUNT)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cost Summary"
 
-        apply_column_widths(ws)
+    apply_column_widths(ws)
 
-        metadata_end_row = write_metadata(ws, build_metadata_rows(metadata), start_row=2)
-        blank_row_index = metadata_end_row + 1
-        header_row = blank_row_index + 1
+    # Row 1: title banner
+    title_text = f"Oracle Investment Proposal (as of {datetime.now().strftime('%m/%d/%Y')})"
+    title_cell = ws.cell(row=1, column=1, value=title_text)
+    title_cell.font = TITLE_FONT
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=TABLE_COLUMN_COUNT)
+    ws.row_dimensions[1].height = TITLE_ROW_HEIGHT
+
+    # Metadata block (rows 2+) — written once, shared by both sections
+    metadata_end_row = write_metadata(ws, build_metadata_rows(metadata), start_row=2)
+    for r in range(2, metadata_end_row + 1):
+        ws.row_dimensions[r].height = DEFAULT_ROW_HEIGHT
+    format_metadata_block(ws, 2, metadata_end_row)
+
+    # Two pricing sections on the same sheet (total_disk then used_disk)
+    # Row layout per section:  section_label | table_headers | data×4 | Monthly_Total
+    cursor = metadata_end_row + 2   # row 10 = blank gap, row 11 = first section label
+    last_total_row = None
+
+    for sheet_key, items in sheets.items():
+        # Section label row
+        section_label_row = cursor
+        lbl = ws.cell(row=section_label_row, column=1, value=SECTION_LABELS.get(sheet_key, sheet_key))
+        lbl.font = Font(bold=True)
+        lbl.fill = SECTION_LABEL_FILL
+        lbl.alignment = Alignment(horizontal="left", vertical="center")
+        ws.merge_cells(
+            start_row=section_label_row, start_column=1,
+            end_row=section_label_row, end_column=TABLE_COLUMN_COUNT,
+        )
+        ws.row_dimensions[section_label_row].height = DEFAULT_ROW_HEIGHT
+
+        # Table headers
+        header_row = section_label_row + 1
         format_table_header(ws, header_row, headers)
+        ws.row_dimensions[header_row].height = HEADER_ROW_HEIGHT
 
+        # Data rows
         data_start = header_row + 1
         current_row = data_start
         storage_row_index: Optional[int] = None
@@ -842,9 +1044,9 @@ def write_output(
             ws.cell(row=current_row, column=1, value=item.description)
             ws.cell(row=current_row, column=2, value=item.part_number)
 
-            part_cell = ws.cell(row=current_row, column=3)
+            part_cell     = ws.cell(row=current_row, column=3)
             instance_cell = ws.cell(row=current_row, column=4)
-            usage_cell = ws.cell(row=current_row, column=5)
+            usage_cell    = ws.cell(row=current_row, column=5)
 
             if item.category == "vpu":
                 if storage_row_index is None:
@@ -853,7 +1055,7 @@ def write_output(
                 instance_cell.value = 1.0
                 usage_cell.value = 1.0
             else:
-                part_cell.value = roundup_formula(item.raw_base_quantity)
+                part_cell.value = _part_qty_formula(item.category, sheet_key, item.raw_base_quantity)
                 instance_cell.value = 1.0
                 if item.category in {"ocpu", "memory"}:
                     usage_cell.value = "=B$4"
@@ -865,6 +1067,7 @@ def write_output(
 
             ws.cell(row=current_row, column=6, value=item.unit_price)
             ws.cell(row=current_row, column=7, value=f"=C{current_row}*D{current_row}*E{current_row}*F{current_row}")
+            ws.row_dimensions[current_row].height = DEFAULT_ROW_HEIGHT
             current_row += 1
 
         total_row = current_row
@@ -872,21 +1075,24 @@ def write_output(
         for col in range(2, 7):
             ws.cell(row=total_row, column=col, value="")
         ws.cell(row=total_row, column=7, value=f"=SUM(G{data_start}:G{current_row - 1})")
+        ws.row_dimensions[total_row].height = DEFAULT_ROW_HEIGHT
 
-        _, disclaimer_row = append_advisory(ws, total_row)
-
-        apply_row_heights(
-            ws,
-            metadata_end_row=metadata_end_row,
-            blank_row_index=blank_row_index,
-            header_row=header_row,
-            data_start=data_start,
-            total_row=total_row,
-            disclaimer_row=disclaimer_row,
-        )
-        format_metadata_block(ws, 2, metadata_end_row)
         format_data_rows(ws, data_start, total_row)
         format_total_row(ws, total_row)
+
+        last_total_row = total_row
+        cursor = total_row + 2   # blank gap before next section
+
+    # Advisory and disclaimer — written once after both sections
+    _, disclaimer_row = append_advisory(ws, last_total_row)
+    ws.row_dimensions[disclaimer_row].height = DISCLAIMER_ROW_HEIGHT
+
+    if vm_df is not None and not vm_df.empty:
+        write_vm_detail_sheet(
+            wb, vm_df, metadata, currency,
+            include_vms_off=bool(metadata.get("powered_off_included")),
+            include_disks_off=bool(metadata.get("powered_off_disks_included")),
+        )
 
     wb.save(output_path)
 
@@ -1031,7 +1237,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     output_path = Path(args.output).resolve()
     try:
-        write_output(output_path, metadata, sheets, args.currency.upper())
+        write_output(output_path, metadata, sheets, args.currency.upper(), vm_df=usage.vm_dataframe)
     except Exception as exc:
         print(f"[ERROR] Failed to write output: {exc}", file=sys.stderr)
         return 1
