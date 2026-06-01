@@ -26,9 +26,9 @@
 <br>
 -->
 
-This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle Cloud Infrastructure prices, and generates an Excel file with aggregate monthly costs for all included resources.
+This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle Cloud Infrastructure prices, and generates an Excel file with per-VM and aggregate monthly costs for all included resources.
 
-Because OCI pricing scales linearly `oci-rvtools` doesn't price individual VMs. Instead it calculates the cost of a hypothetical single VM whose vCPU, RAM, and disk match the combined totals of the ingested workloads. That aggregated cost is identical to summing the per-VM prices, but a lot just easier to calculate and present 🤓.
+Because OCI pricing scales linearly, costs are calculated by summing per-VM OCPU, RAM and disk values — each rounded up to whole units. The output includes a per-VM breakdown alongside aggregate monthly and yearly totals.
 
 ---
 
@@ -42,7 +42,7 @@ Because OCI pricing scales linearly `oci-rvtools` doesn't price individual VMs. 
 - **Automatic unit handling** – converts MiB totals to GiB, rounds quantities up to whole units, and maps 2 vCPUs to 1 OCPU.
 - **Live pricing lookup** – fetches list prices for configurable OCI part numbers via the [OCI pricing API](https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/).
 - **Console logging** – prints aggregation totals, pricing inputs, and powered-on/off inclusion choices to the console.
-- **Polished Excel output** – writes `oci_cost_summary.xlsx` with two sheets (Total Disk vs. In Use Disk), metadata header, full Excel formulas and advisory text. Designed to look similar to the output from the official [OCI Cost Estimator](https://www.oracle.com/cloud/costestimator.html).
+- **Polished Excel output** – writes `oci_cost_summary.xlsx` with a **Cost Summary** sheet (Total Provisioned Disk and Used Disk sections) and a **VM Details** sheet with a per-VM cost breakdown. All quantities are Excel formulas — the Cost Summary totals are driven directly by the VM Details rows. Designed to look similar to the output from the official [OCI Cost Estimator](https://www.oracle.com/cloud/costestimator.html).
 
 ---
 
@@ -134,19 +134,13 @@ python3 -m http.server 8080 --directory docs/
 
 ## 📤 Output workbook
 
-The generated Excel file (`oci_cost_summary.xlsx` by default) contains:
+The generated Excel file (`oci_cost_summary.xlsx` by default) contains two sheets:
 
-1. **total_disk** – Monthly costs using the total provisioned disk capacity (TiB → GiB).
-2. **used_disk** – Monthly costs using the reported "In Use" disk capacity.
+1. **Cost Summary** – Aggregate monthly costs with two sections: Total Provisioned Disk and Used Disk. Includes a banner row, metadata block (source files, filters, hours, currency, VPU value, powered-on/off flags), pricing table with full Excel formulas, and advisory text. Part quantities are driven by SUM formulas referencing the VM Details sheet.
 
-Each sheet includes:
+2. **VM Details** – One row per VM with OCPU, RAM and disk values alongside monthly and yearly cost formulas. Editing a value here automatically updates the Cost Summary totals.
 
-- Banner row stamped with the run date.
-- Metadata block (source files, hours per month, currency, VPU value, powered-on/off inclusion flags).
-- Pricing table with formulas for Part Qty, Instance Qty, Usage Qty, Unit Price, and Monthly Cost.
-- Advisory text and disclaimer merged across all columns.
-
-All quantities are rounded up to whole units before pricing. Block Volume Performance Units (VPU) scale with disk capacity (`VPU per GB` × GB).
+Per-VM quantities are rounded up to whole units. Block Volume Performance Units (VPU) scale with disk capacity (`VPU per GB` × GB).
 
 [<img src="images/oci_cost_summary_example.png" width="800">](images/oci_cost_summary_example.png)
 
