@@ -30,6 +30,8 @@ This utility ingests one or more RVTools `vInfo` sheets, pulls the latest Oracle
 
 Because OCI pricing scales linearly, costs are calculated by summing per-VM OCPU, RAM and disk values — each rounded up to whole units. The output includes a per-VM breakdown alongside aggregate monthly and yearly totals.
 
+> **Note:** VMware and Oracle approach CPU allocation differently. VMware's hypervisor present physical cores and hyperthreads as logical processors for vCPU allocation to guest VMs. Oracle allocates a full physical core (1 OCPU) and lets the guest OS handle both hyperthreads itself. So 1 OCPU equals 2 vCPUs from the guest's perspective. Same physical compute, different abstraction layers. `oci-rvtools` divides vCPU counts by 2 and rounds up to convert between the two.
+
 ---
 
 ## 🚀 Features
