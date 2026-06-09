@@ -1,8 +1,8 @@
 class OciRvtools < Formula
   desc "Convert RVTools Excel exports into an Oracle Cloud (OCI) monthly cost estimate workbook"
   homepage "https://github.com/KimTholstorf/oci-rvtools-cost-estimator"
-  url "https://files.pythonhosted.org/packages/44/ee/0b8eae3d3fb011aa378446dac4d8deffaee7ed452a0b7094d70b1607b092/oci_rvtools-1.1.0.tar.gz"
-  sha256 "c399b392205e7573ad048b128d3d581e287ac7fc7385a749c5a109cec02020e5"
+  url "https://files.pythonhosted.org/packages/13/60/47dfffe63c9f6a810e32993ab4fca934976098e3c6b74e3c604a30ad7d4f/oci_rvtools-1.2.0.tar.gz"
+  sha256 "6ddc3c7e87de1c8e60b488d5289af34a86d301e2c9fc256dd63304860167d5da"
   license "MIT"
 
   depends_on "python3"
