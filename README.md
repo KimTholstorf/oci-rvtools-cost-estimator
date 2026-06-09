@@ -44,7 +44,7 @@ Because OCI pricing scales linearly, costs are calculated by summing per-VM OCPU
 - **Automatic unit handling** – converts MiB totals to GiB, rounds quantities up to whole units, and maps 2 vCPUs to 1 OCPU.
 - **Live pricing lookup** – fetches list prices for configurable OCI part numbers via the [OCI pricing API](https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/).
 - **Console logging** – prints aggregation totals, pricing inputs, and powered-on/off inclusion choices to the console.
-- **Polished Excel output** – writes `oci_cost_summary.xlsx` with a **Cost Summary** sheet (Total Provisioned Disk and Used Disk sections) and a **VM Details** sheet with a per-VM cost breakdown. All quantities are Excel formulas — the Cost Summary totals are driven directly by the VM Details rows. Designed to look similar to the output from the official [OCI Cost Estimator](https://www.oracle.com/cloud/costestimator.html).
+- **Polished Excel output** – writes `oci_cost_summary.xlsx` with a **Cost Summary** sheet, a **VM Details** sheet with per-VM cost breakdown, and an **OS Summary** sheet. All quantities are Excel formulas — Cost Summary totals are driven directly by VM Details rows. Designed to look similar to the output from the official [OCI Cost Estimator](https://www.oracle.com/cloud/costestimator.html).
 
 ---
 
@@ -136,11 +136,13 @@ python3 -m http.server 8080 --directory docs/
 
 ## 📤 Output workbook
 
-The generated Excel file (`oci_cost_summary.xlsx` by default) contains two sheets:
+The generated Excel file (`oci_cost_summary.xlsx` by default) contains three sheets:
 
-1. **Cost Summary** – Aggregate monthly costs with two sections: Total Provisioned Disk and Used Disk. Includes a banner row, metadata block (source files, filters, hours, currency, VPU value, powered-on/off flags), pricing table with full Excel formulas, and advisory text. Part quantities are driven by SUM formulas referencing the VM Details sheet.
+1. **Cost Summary** – Aggregate monthly costs with two sections: Total Provisioned Disk and Total Used Disk. Includes a banner row, metadata block (source files, filters, hours, currency, VPU value, powered-on/off flags), pricing table with full Excel formulas, and advisory text. Part quantities are driven by SUM formulas referencing the VM Details sheet.
 
-2. **VM Details** – One row per VM with OCPU, RAM and disk values alongside monthly and yearly cost formulas. Editing a value here automatically updates the Cost Summary totals.
+2. **VM Details** – One row per VM with OCPU, RAM and disk values alongside monthly and yearly cost formulas. Includes an OS Detected column (sourced from RVTools VMware Tools data) and an OCI Compatible column (yes / maybe / no) colour-coded via conditional formatting. Editing a value here automatically updates the Cost Summary totals.
+
+3. **OS Summary** – Aggregates detected operating systems and their OCI compatibility classification. VM counts and percentages are driven by COUNTIF formulas referencing VM Details, so the summary stays in sync as values change.
 
 Per-VM quantities are rounded up to whole units. Block Volume Performance Units (VPU) scale with disk capacity (`VPU per GB` × GB).
 
