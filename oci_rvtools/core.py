@@ -28,13 +28,14 @@ from urllib import request as urlrequest
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
+from openpyxl.formatting.rule import CellIsRule
 
 
 # =========================
 # Version
 # =========================
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 # =========================
@@ -74,6 +75,8 @@ CANON_COLS_VINFO = [
     "Provisioned MiB",
     "In Use MiB",
     "Total disk capacity MiB",
+    "OS according to the VMware Tools",
+    "OS according to the configuration file",
 ]
 
 ALIASES_VINFO = {
@@ -92,6 +95,7 @@ ALIASES_VINFO = {
     "vInfoPrimaryIP": "Primary IP Address",
     "vInfoOS": "OS according to the VMware Tools",
     "vInfoOSTools": "OS according to the VMware Tools",
+    "vInfoOSConfig": "OS according to the configuration file",
 }
 
 TOKEN_MAP_VINFO = {
@@ -110,6 +114,8 @@ TOKEN_MAP_VINFO = {
     "inuse": "In Use MiB",
     "inusemib": "In Use MiB",
     "totaldiskcapacitymib": "Total disk capacity MiB",
+    "osaccordingtovmwaretools": "OS according to the VMware Tools",
+    "osaccordingtotheconfigurationfile": "OS according to the configuration file",
 }
 
 NUMERIC_PREFERRED_VINFO = {
@@ -162,6 +168,8 @@ DISCLAIMER_ROW_HEIGHT = 80
 VM_DETAIL_HEADERS = [
     "VM Name",
     "Powerstate",
+    "OS Detected",
+    "OCI Compatible",
     "OCPU",
     "RAM (GB)",
     "Disk Provisioned (GB)",
@@ -178,10 +186,11 @@ VM_DETAIL_HEADERS = [
 ]
 
 VM_DETAIL_COL_WIDTHS = {
-    "A": 34, "B": 14, "C": 10, "D": 12,
-    "E": 22, "F": 18, "G": 22, "H": 22,
-    "I": 24, "J": 24, "K": 28, "L": 26,
-    "M": 28, "N": 26, "O": 16,
+    "A": 34, "B": 14, "C": 37.1, "D": 16,
+    "E": 10, "F": 12, "G": 22, "H": 18,
+    "I": 22, "J": 22, "K": 24, "L": 24,
+    "M": 28, "N": 26, "O": 28, "P": 26,
+    "Q": 16,
 }
 
 VM_DETAIL_NOTE = (
@@ -202,8 +211,95 @@ DISCLAIMER_ALIGNMENT = Alignment(wrap_text=True, vertical="top")
 
 SECTION_LABELS = {
     "total_disk": "Total Provisioned Disk",
-    "used_disk":  "Used Disk",
+    "used_disk":  "Total Used Disk",
 }
+
+# OCI compatibility conditional formatting fills — applied as Excel rules so
+# the colour updates automatically if a cell value is edited.
+_CF_FILL_YES     = PatternFill(start_color="FFC6EFCE", end_color="FFC6EFCE", fill_type="solid")  # soft green
+_CF_FILL_MAYBE   = PatternFill(start_color="FFFFEB9C", end_color="FFFFEB9C", fill_type="solid")  # soft amber
+_CF_FILL_NO      = PatternFill(start_color="FFFFC7CE", end_color="FFFFC7CE", fill_type="solid")  # soft red
+
+# Ordered rules for OS → OCI compatibility classification.
+# Each entry: (lowercase_substring, result, note)
+# First match wins; "unknown" is returned when nothing matches.
+OS_OCI_COMPAT_RULES: List[Tuple[str, str, str]] = [
+    # ── Definite "no" ──────────────────────────────────────────────────────────
+    ("vmware esx",                      "no",    ""),
+    ("esxi",                            "no",    ""),
+    ("mac os",                          "no",    ""),
+    ("macos",                           "no",    ""),
+    ("solaris",                         "no",    ""),
+    ("netware",                         "no",    ""),
+    ("ms-dos",                          "no",    ""),
+    ("windows xp",                      "no",    ""),
+    ("windows vista",                   "no",    ""),
+    ("windows 7 ",                      "no",    ""),
+    ("windows 7)",                      "no",    ""),
+    ("windows 8 ",                      "no",    ""),
+    ("windows 8)",                      "no",    ""),
+    ("(32-bit)",                        "no",    "32-bit OS not supported on OCI"),
+    # ── Windows Desktop → "maybe" (OCI Secure Desktop only) ───────────────────
+    ("windows 10",                      "maybe", "Only supported on OCI Secure Desktop"),
+    ("windows 11",                      "maybe", "Only supported on OCI Secure Desktop"),
+    # ── Windows Server specific versions → "yes" ──────────────────────────────
+    ("windows server 2025",             "yes",   ""),
+    ("windows server 2022",             "yes",   ""),
+    ("windows server 2019",             "yes",   ""),
+    ("windows server 2016",             "yes",   ""),
+    # ── Windows Server old/unsupported versions → "no" ────────────────────────
+    ("windows server 2012",             "no",    ""),
+    ("windows server 2008",             "no",    ""),
+    ("windows server 2003",             "no",    ""),
+    ("windows server 2000",             "no",    ""),
+    ("windows nt",                      "no",    ""),
+    # ── Windows Server generic (unknown/future version) → "maybe" ─────────────
+    ("windows server",                  "maybe", ""),
+    # ── Oracle Linux / Autonomous → "yes" ─────────────────────────────────────
+    ("oracle autonomous linux",         "yes",   ""),
+    ("oracle linux",                    "yes",   ""),
+    # ── Ubuntu: specific supported LTS → "yes"; generic → "maybe" ─────────────
+    ("ubuntu linux 20",                 "yes",   ""),
+    ("ubuntu linux 22",                 "yes",   ""),
+    ("ubuntu linux 24",                 "yes",   ""),
+    ("ubuntu 20",                       "yes",   ""),
+    ("ubuntu 22",                       "yes",   ""),
+    ("ubuntu 24",                       "yes",   ""),
+    ("ubuntu",                          "maybe", ""),
+    # ── RHEL: specific versions → "yes"; generic/old → "maybe" ───────────────
+    ("red hat enterprise linux 6",      "yes",   ""),
+    ("red hat enterprise linux 7",      "yes",   ""),
+    ("red hat enterprise linux 8",      "yes",   ""),
+    ("red hat enterprise linux 9",      "yes",   ""),
+    ("red hat enterprise linux 2",      "no",    ""),
+    ("red hat enterprise linux 3",      "no",    ""),
+    ("red hat enterprise linux",        "maybe", ""),
+    # ── CentOS: modern specific → "yes"; old/generic → "maybe" ───────────────
+    ("centos stream",                   "yes",   ""),
+    ("centos 7",                        "yes",   ""),
+    ("centos 6",                        "yes",   ""),
+    ("centos",                          "maybe", ""),
+    # ── SUSE: specific versions → "yes"; generic → "maybe" ───────────────────
+    ("suse linux enterprise 11",        "yes",   ""),
+    ("suse linux enterprise 12",        "yes",   ""),
+    ("suse linux enterprise 15",        "yes",   ""),
+    ("suse linux enterprise",           "maybe", ""),
+    ("opensuse",                        "yes",   ""),
+    # ── Debian: versions 8+ → "yes"; generic → "maybe" ───────────────────────
+    ("debian gnu/linux 8",              "yes",   ""),
+    ("debian gnu/linux 9",              "yes",   ""),
+    ("debian gnu/linux 10",             "yes",   ""),
+    ("debian gnu/linux 11",             "yes",   ""),
+    ("debian gnu/linux 12",             "yes",   ""),
+    ("debian",                          "maybe", ""),
+    # ── FreeBSD ───────────────────────────────────────────────────────────────
+    ("freebsd",                         "maybe", ""),
+    # ── Catch-all Linux / Other ───────────────────────────────────────────────
+    ("other linux",                     "maybe", ""),
+    ("linux",                           "maybe", ""),
+    ("other (64-bit)",                  "maybe", ""),
+    ("other",                           "maybe", ""),
+]
 
 
 # =========================
@@ -216,6 +312,36 @@ def info(msg: str) -> None:
 
 def warn(msg: str) -> None:
     print(f"[WARN] {msg}")
+
+
+# =========================
+# OS detection helper
+# =========================
+
+def detect_os(row_data: "pd.Series") -> Tuple[str, str, str]:
+    """Return (os_detected, oci_compatible, compat_note) for a vInfo row.
+
+    os_detected   – raw OS string from RVTools (VMware Tools column, falling
+                    back to configuration file column when the first is empty).
+    oci_compatible – "yes" | "maybe" | "no" | "unknown"
+    compat_note   – short human-readable note, e.g. "Only supported on OCI Secure Desktop"
+    """
+    os_str = ""
+    for col in ("OS according to the VMware Tools", "OS according to the configuration file"):
+        raw = row_data.get(col, "")
+        if pd.notna(raw) and str(raw).strip():
+            os_str = str(raw).strip()
+            break
+
+    if not os_str:
+        return "", "unknown", ""
+
+    lower = os_str.lower()
+    for pattern, result, note in OS_OCI_COMPAT_RULES:
+        if pattern in lower:
+            return os_str, result, note
+
+    return os_str, "unknown", ""
 
 
 # =========================
@@ -297,6 +423,9 @@ def canonicalize_vinfo(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_OS_COLS = ["OS according to the VMware Tools", "OS according to the configuration file"]
+
+
 def load_vinfo_dataframe(filepath: Path) -> Optional[pd.DataFrame]:
     try:
         xl = pd.read_excel(filepath, sheet_name=None, engine="openpyxl")
@@ -305,17 +434,41 @@ def load_vinfo_dataframe(filepath: Path) -> Optional[pd.DataFrame]:
         return None
 
     vinfo_df = None
+    vcpu_df = None
     for sheet_name, df in xl.items():
         token = _sheet_token(sheet_name)
         if token.endswith("vinfo") or "vinfo" in token:
             vinfo_df = df
-            break
+        elif token == "vcpu":
+            vcpu_df = df
 
     if vinfo_df is None:
         warn(f"{filepath.name}: missing vInfo sheet, skipping")
         return None
 
     vinfo_df = canonicalize_vinfo(vinfo_df)
+
+    # If vInfo is missing OS columns, try to pull them from vCPU (common in trimmed exports)
+    missing_os = [c for c in _OS_COLS if c not in vinfo_df.columns or vinfo_df[c].astype(str).str.strip().eq("").all()]
+    if missing_os and vcpu_df is not None and "VM" in vcpu_df.columns:
+        available = [c for c in _OS_COLS if c in vcpu_df.columns]
+        if available:
+            os_lookup = (
+                vcpu_df[["VM"] + available]
+                .drop_duplicates(subset="VM")
+                .rename(columns={c: c for c in available})
+            )
+            vinfo_df = vinfo_df.merge(os_lookup, on="VM", how="left", suffixes=("", "_vcpu"))
+            # Prefer the freshly merged column; drop the _vcpu suffixed duplicate if any
+            for col in available:
+                vcpu_col = f"{col}_vcpu"
+                if vcpu_col in vinfo_df.columns:
+                    vinfo_df[col] = vinfo_df[col].where(
+                        vinfo_df[col].astype(str).str.strip().ne(""), vinfo_df[vcpu_col]
+                    )
+                    vinfo_df.drop(columns=[vcpu_col], inplace=True)
+            info(f"vInfo: pulled OS columns from vCPU sheet ({', '.join(available)})")
+
     return vinfo_df
 
 
@@ -918,39 +1071,195 @@ def write_vm_detail_sheet(
         include_cpu_ram = not is_powered_off or include_vms_off
         include_disk    = not is_powered_off or include_disks_off
 
-        # Columns A–F: raw values
+        # OS detection
+        os_detected, oci_compat, compat_note = detect_os(row_data)
+
+        # Columns A–H: descriptive values
         ws.cell(row=r, column=1,  value=str(row_data["VM"]))
         ws.cell(row=r, column=2,  value=powerstate)
-        ws.cell(row=r, column=3,  value=ocpu_val)
-        ws.cell(row=r, column=4,  value=ram_gb_val)
-        ws.cell(row=r, column=5,  value=disk_prov_val)
-        ws.cell(row=r, column=6,  value=disk_used_val)
+        ws.cell(row=r, column=3,  value=os_detected)                # OS Detected
+        ws.cell(row=r, column=4,  value=oci_compat)                 # OCI Compatible
+        ws.cell(row=r, column=5,  value=ocpu_val)
+        ws.cell(row=r, column=6,  value=ram_gb_val)
+        ws.cell(row=r, column=7,  value=disk_prov_val)
+        ws.cell(row=r, column=8,  value=disk_used_val)
 
-        # Columns G–J: cost formulas (or 0 when excluded by power-state flags)
+        # Columns I–L: cost formulas (or 0 when excluded by power-state flags)
         if include_cpu_ram:
-            ws.cell(row=r, column=7,  value=f"=C{r}*'{td}'!B${hours_row}*{ocpu_price}")
-            ws.cell(row=r, column=8,  value=f"=D{r}*'{td}'!B${hours_row}*{ram_price}")
-        else:
-            ws.cell(row=r, column=7,  value=0)
-            ws.cell(row=r, column=8,  value=0)
-
-        if include_disk:
-            ws.cell(row=r, column=9,  value=f"=E{r}*{disk_cost_per_gb}")
-            ws.cell(row=r, column=10, value=f"=F{r}*{disk_cost_per_gb}")
+            ws.cell(row=r, column=9,  value=f"=E{r}*'{td}'!B${hours_row}*{ocpu_price}")
+            ws.cell(row=r, column=10, value=f"=F{r}*'{td}'!B${hours_row}*{ram_price}")
         else:
             ws.cell(row=r, column=9,  value=0)
             ws.cell(row=r, column=10, value=0)
 
-        # Columns K–N: totals
-        ws.cell(row=r, column=11, value=f"=G{r}+H{r}+I{r}")   # Total monthly prov
-        ws.cell(row=r, column=12, value=f"=G{r}+H{r}+J{r}")   # Total monthly used
-        ws.cell(row=r, column=13, value=f"=K{r}*12")           # Total yearly prov
-        ws.cell(row=r, column=14, value=f"=L{r}*12")           # Total yearly used
+        if include_disk:
+            ws.cell(row=r, column=11, value=f"=G{r}*{disk_cost_per_gb}")
+            ws.cell(row=r, column=12, value=f"=H{r}*{disk_cost_per_gb}")
+        else:
+            ws.cell(row=r, column=11, value=0)
+            ws.cell(row=r, column=12, value=0)
 
-        # Column O: note
-        ws.cell(row=r, column=15, value="Powered Off" if is_powered_off else "")
+        # Columns M–P: totals
+        ws.cell(row=r, column=13, value=f"=I{r}+J{r}+K{r}")   # Total monthly prov
+        ws.cell(row=r, column=14, value=f"=I{r}+J{r}+L{r}")   # Total monthly used
+        ws.cell(row=r, column=15, value=f"=M{r}*12")           # Total yearly prov
+        ws.cell(row=r, column=16, value=f"=N{r}*12")           # Total yearly used
+
+        # Column Q: note — combine powerstate and OS compat notes where applicable
+        note_parts = []
+        if is_powered_off:
+            note_parts.append("Powered Off")
+        if compat_note:
+            note_parts.append(compat_note)
+        ws.cell(row=r, column=17, value=" | ".join(note_parts))
 
         ws.row_dimensions[r].height = DEFAULT_ROW_HEIGHT
+
+    # Conditional formatting for OCI Compatible column (D) — colour updates if cell is edited
+    last_data_row = 2 + len(df)
+    cf_range = f"D3:D{last_data_row}"
+    ws.conditional_formatting.add(cf_range, CellIsRule(operator="equal", formula=['"yes"'],   fill=_CF_FILL_YES))
+    ws.conditional_formatting.add(cf_range, CellIsRule(operator="equal", formula=['"maybe"'], fill=_CF_FILL_MAYBE))
+    ws.conditional_formatting.add(cf_range, CellIsRule(operator="equal", formula=['"no"'],    fill=_CF_FILL_NO))
+
+
+def write_os_summary_sheet(wb, vm_df: pd.DataFrame) -> None:
+    """Append an 'OS Summary' sheet with COUNTIF formulas that live-update from VM Details."""
+    if vm_df is None or vm_df.empty:
+        return
+
+    ws = wb.create_sheet(title="OS Summary")
+
+    vd_end       = 2 + len(vm_df)
+    vd_os_range  = f"'VM Details'!$C$3:$C${vd_end}"   # OS Detected column
+    vd_cf_range  = f"'VM Details'!$D$3:$D${vd_end}"   # OCI Compatible column
+
+    # Column widths
+    ws.column_dimensions["A"].width = 37.1
+    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["C"].width = 14
+
+    # ── Row 1: title ──────────────────────────────────────────────────────────
+    title_cell = ws.cell(row=1, column=1, value="OS Summary")
+    title_cell.font = TITLE_FONT
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3)
+    ws.row_dimensions[1].height = TITLE_ROW_HEIGHT
+
+    cursor = 3  # row 2 intentionally blank
+
+    # ── Section 1: OCI Compatibility Overview ────────────────────────────────
+    lbl = ws.cell(row=cursor, column=1, value="OCI Compatibility Overview")
+    lbl.font = Font(bold=True)
+    lbl.fill = SECTION_LABEL_FILL
+    lbl.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells(start_row=cursor, start_column=1, end_row=cursor, end_column=3)
+    ws.row_dimensions[cursor].height = DEFAULT_ROW_HEIGHT
+    cursor += 1
+
+    for col_idx, hdr in enumerate(["Status", "VM Count", "VM Percent"], start=1):
+        cell = ws.cell(row=cursor, column=col_idx, value=hdr)
+        cell.font = Font(bold=True)
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[cursor].height = HEADER_ROW_HEIGHT
+    cursor += 1
+
+    compat_data_start = cursor
+    compat_total_row  = compat_data_start + 4  # yes/maybe/no/unknown = 4 rows, total is row after
+
+    for status in ("yes", "maybe", "no", "unknown"):
+        ws.cell(row=cursor, column=1, value=status)
+        ws.cell(row=cursor, column=2, value=f'=COUNTIF({vd_cf_range},"{status}")')
+        pct_cell = ws.cell(row=cursor, column=3,
+                           value=f"=IF(B${compat_total_row}=0,0,B{cursor}/B${compat_total_row})")
+        pct_cell.number_format = "0.0%"
+        ws.row_dimensions[cursor].height = DEFAULT_ROW_HEIGHT
+        cursor += 1
+    compat_data_end = cursor - 1
+
+    total_cell = ws.cell(row=cursor, column=1, value="Total")
+    total_cell.font = Font(bold=True)
+    count_cell = ws.cell(row=cursor, column=2, value=f"=SUM(B{compat_data_start}:B{compat_data_end})")
+    count_cell.font = Font(bold=True)
+    ws.row_dimensions[cursor].height = DEFAULT_ROW_HEIGHT
+    cursor += 2  # blank gap
+
+    # Conditional formatting on Status column (A) in this section
+    cf_status_range = f"A{compat_data_start}:A{compat_data_end}"
+    ws.conditional_formatting.add(cf_status_range, CellIsRule(operator="equal", formula=['"yes"'],   fill=_CF_FILL_YES))
+    ws.conditional_formatting.add(cf_status_range, CellIsRule(operator="equal", formula=['"maybe"'], fill=_CF_FILL_MAYBE))
+    ws.conditional_formatting.add(cf_status_range, CellIsRule(operator="equal", formula=['"no"'],    fill=_CF_FILL_NO))
+
+    # ── Section 2: OS Breakdown ───────────────────────────────────────────────
+    lbl2 = ws.cell(row=cursor, column=1, value="OS Breakdown")
+    lbl2.font = Font(bold=True)
+    lbl2.fill = SECTION_LABEL_FILL
+    lbl2.alignment = Alignment(horizontal="left", vertical="center")
+    ws.merge_cells(start_row=cursor, start_column=1, end_row=cursor, end_column=3)
+    ws.row_dimensions[cursor].height = DEFAULT_ROW_HEIGHT
+    cursor += 1
+
+    for col_idx, hdr in enumerate(["OS Detected", "OCI Compatible", "VM Count"], start=1):
+        cell = ws.cell(row=cursor, column=col_idx, value=hdr)
+        cell.font = Font(bold=True)
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[cursor].height = HEADER_ROW_HEIGHT
+    cursor += 1
+
+    # Build unique OS list with counts, sorted by count descending then name ascending
+    os_data: Dict[str, Tuple[str, int]] = {}
+    for _, row in vm_df.iterrows():
+        os_str, oci_compat, _ = detect_os(row)
+        key = os_str  # empty string = no OS data
+        if key not in os_data:
+            os_data[key] = (oci_compat, 0)
+        os_data[key] = (os_data[key][0], os_data[key][1] + 1)
+
+    sorted_os = sorted(os_data.items(), key=lambda x: (-x[1][1], x[0].lower()))
+
+    os_data_start = cursor
+    for os_str, (oci_compat, _) in sorted_os:
+        display_os = os_str if os_str else "(No OS data)"
+        ws.cell(row=cursor, column=1, value=display_os)
+        ws.cell(row=cursor, column=2, value=oci_compat)
+        if os_str:
+            ws.cell(row=cursor, column=3, value=f"=COUNTIF({vd_os_range},A{cursor})")
+        else:
+            ws.cell(row=cursor, column=3, value=f'=COUNTIF({vd_os_range},"")')
+        ws.row_dimensions[cursor].height = DEFAULT_ROW_HEIGHT
+        cursor += 1
+    os_data_end = cursor - 1
+
+    total_os = ws.cell(row=cursor, column=1, value="Total")
+    total_os.font = Font(bold=True)
+    total_os_count = ws.cell(row=cursor, column=3, value=f"=SUM(C{os_data_start}:C{os_data_end})")
+    total_os_count.font = Font(bold=True)
+    ws.row_dimensions[cursor].height = DEFAULT_ROW_HEIGHT
+
+    # Conditional formatting on OCI Compatible column (B) in OS Breakdown
+    cf_os_range = f"B{os_data_start}:B{os_data_end}"
+    ws.conditional_formatting.add(cf_os_range, CellIsRule(operator="equal", formula=['"yes"'],   fill=_CF_FILL_YES))
+    ws.conditional_formatting.add(cf_os_range, CellIsRule(operator="equal", formula=['"maybe"'], fill=_CF_FILL_MAYBE))
+    ws.conditional_formatting.add(cf_os_range, CellIsRule(operator="equal", formula=['"no"'],    fill=_CF_FILL_NO))
+
+
+def _accounting_number_format(currency: str) -> str:
+    """Return an Excel accounting number format string for the given ISO currency code.
+
+    Currencies with a well-known single symbol (USD, EUR, GBP …) use that symbol
+    directly.  All others use the [$CODE] notation so Excel displays the ISO code
+    left-aligned — identical to what Excel does when you pick Accounting and choose
+    the currency from its own dropdown for less common currencies.
+    """
+    _SYMBOLS: Dict[str, str] = {
+        "USD": "$",  "EUR": "€",  "GBP": "£",
+        "JPY": "¥",  "CNY": "¥",  "INR": "₹",  "KRW": "₩",
+    }
+    code = currency.upper()
+    sym  = _SYMBOLS.get(code, f"[${code}]")
+    return f'_({sym}* #,##0.00_);_({sym}* (#,##0.00);_({sym}* "-"??_);_(@_)'
 
 
 def write_output(
@@ -964,6 +1273,7 @@ def write_output(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     headers = [header.format(currency=currency) for header in EXCEL_HEADERS]
+    cost_fmt = _accounting_number_format(currency)
 
     def roundup_formula(value: float) -> str:
         raw_str = f"{value:.10f}".rstrip("0").rstrip(".")
@@ -978,14 +1288,15 @@ def write_output(
     _vd_end = 2 + len(vm_df) if _use_vd_sums else None
 
     # Column letters in vm_details for each aggregate category
-    _vd_col = {"ocpu": "C", "memory": "D"}  # storage col depends on sheet (E=prov, F=used)
+    # (C=OS Detected, D=OCI Compatible inserted before OCPU — so OCPU=E, RAM=F, DiskProv=G, DiskUsed=H)
+    _vd_col = {"ocpu": "E", "memory": "F"}  # storage col depends on sheet (G=prov, H=used)
 
     def _part_qty_formula(category: str, sheet_name: str, raw_quantity: float) -> str:
         """Return a SUM formula referencing vm_details, or ROUNDUP fallback."""
         if not _use_vd_sums:
             return roundup_formula(raw_quantity)
         if category == "storage":
-            col = "E" if sheet_name == "total_disk" else "F"
+            col = "G" if sheet_name == "total_disk" else "H"
         else:
             col = _vd_col.get(category)
         if col is None:
@@ -1066,7 +1377,8 @@ def write_output(
                     usage_cell.value = item.usage_quantity
 
             ws.cell(row=current_row, column=6, value=item.unit_price)
-            ws.cell(row=current_row, column=7, value=f"=C{current_row}*D{current_row}*E{current_row}*F{current_row}")
+            cost_cell = ws.cell(row=current_row, column=7, value=f"=C{current_row}*D{current_row}*E{current_row}*F{current_row}")
+            cost_cell.number_format = cost_fmt
             ws.row_dimensions[current_row].height = DEFAULT_ROW_HEIGHT
             current_row += 1
 
@@ -1074,7 +1386,8 @@ def write_output(
         ws.cell(row=total_row, column=1, value="Monthly Total")
         for col in range(2, 7):
             ws.cell(row=total_row, column=col, value="")
-        ws.cell(row=total_row, column=7, value=f"=SUM(G{data_start}:G{current_row - 1})")
+        total_cost_cell = ws.cell(row=total_row, column=7, value=f"=SUM(G{data_start}:G{current_row - 1})")
+        total_cost_cell.number_format = cost_fmt
         ws.row_dimensions[total_row].height = DEFAULT_ROW_HEIGHT
 
         format_data_rows(ws, data_start, total_row)
@@ -1093,6 +1406,7 @@ def write_output(
             include_vms_off=bool(metadata.get("powered_off_included")),
             include_disks_off=bool(metadata.get("powered_off_disks_included")),
         )
+        write_os_summary_sheet(wb, vm_df)
 
     wb.save(output_path)
 
