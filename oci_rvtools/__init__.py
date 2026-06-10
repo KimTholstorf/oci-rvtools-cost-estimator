@@ -1,3 +1,4 @@
-from .core import VERSION as __version__, main
+from .cli import main
+from .version import VERSION as __version__
 
 __all__ = ["main", "__version__"]

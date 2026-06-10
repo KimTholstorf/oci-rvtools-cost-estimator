@@ -15,7 +15,7 @@
 set -euo pipefail
 
 # ── Config — update these two paths if the project structure changes ───────────
-PYTHON_APP="oci_rvtools/core.py"   # Python file containing VERSION = "x.y.z"
+PYTHON_APP="oci_rvtools/version.py"   # Python file containing VERSION = "x.y.z"
 PYPROJECT="pyproject.toml"         # Setuptools project metadata file
 
 # ── Parse arguments ────────────────────────────────────────────────────────────

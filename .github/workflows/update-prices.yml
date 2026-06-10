@@ -20,7 +20,15 @@ jobs:
           python3 - <<'PYEOF'
           import json, urllib.request, urllib.parse, datetime
 
-          PARTS = ["B97384", "B97385", "B91961", "B91962", "B111129", "B111130", "B112530", "B112531"]
+          # Derive the part list from the single source of truth (docs/shapes.json),
+          # so adding a shape there automatically extends price collection.
+          with open("docs/shapes.json") as f:
+              shapes = json.load(f)
+          PARTS = []
+          for shape in shapes["shapes"]:
+              PARTS += [shape["ocpu_part"], shape["memory_part"]]
+          PARTS += [shapes["storage_part"], shapes["vpu_part"]]
+          PARTS = list(dict.fromkeys(PARTS))  # dedupe, preserve order
           API_BASE = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 
           result = {"updated": datetime.date.today().isoformat(), "prices": {}}

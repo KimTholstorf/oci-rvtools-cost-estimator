@@ -1,0 +1,26 @@
+{
+  "_comment": "Single source of truth for OCI compute shapes and pricing part numbers. Consumed by the CLI (oci_rvtools.shapes), the web UI (docs/shapes.json mirror), and the weekly prices workflow. docs/shapes.json must stay byte-identical to this file (enforced by tests/test_shapes.py).",
+  "shapes": [
+    {
+      "id": "e5",
+      "label": "VM.Standard.E5.Flex",
+      "ocpu_part": "B97384",
+      "memory_part": "B97385",
+      "default": true
+    },
+    {
+      "id": "e6",
+      "label": "VM.Standard.E6.Flex",
+      "ocpu_part": "B111129",
+      "memory_part": "B111130"
+    },
+    {
+      "id": "e6ax",
+      "label": "VM.Standard.E6.Ax.Flex",
+      "ocpu_part": "B112530",
+      "memory_part": "B112531"
+    }
+  ],
+  "storage_part": "B91961",
+  "vpu_part": "B91962"
+}

@@ -321,11 +321,7 @@
       </div>
       <div class="field">
         <label for="shape">Compute shape <a class="info-link" href="https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm" target="_blank" title="Oracle Compute Shapes documentation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="17" stroke-width="2.5"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg></a></label>
-        <select id="shape">
-          <option value="e5" selected>VM.Standard.E5.Flex</option>
-          <option value="e6">VM.Standard.E6.Flex</option>
-          <option value="e6ax">VM.Standard.E6.Ax.Flex</option>
-        </select>
+        <select id="shape"><!-- populated from shapes.json --></select>
       </div>
       <div class="field">
         <label for="vpu">Disk performance level <a class="info-link" href="https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm" target="_blank" title="Oracle Block Volume Performance documentation"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="11" x2="12" y2="17" stroke-width="2.5"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor" stroke="none"/></svg></a></label>
@@ -446,6 +442,22 @@
     const prices = await pricesResp.json();
     document.getElementById('prices-date').textContent = prices.updated;
 
+    // Fetch shapes.json (single source of truth) and populate the shape dropdown
+    const shapesResp = await fetch('shapes.json');
+    if (!shapesResp.ok) throw new Error('Could not load shapes.json');
+    const shapesData = await shapesResp.json();
+    window.shapeParts = {};
+    const shapeSelect = document.getElementById('shape');
+    shapeSelect.innerHTML = '';
+    shapesData.shapes.forEach(shape => {
+      window.shapeParts[shape.id] = { ocpu: shape.ocpu_part, memory: shape.memory_part };
+      const opt = document.createElement('option');
+      opt.value = shape.id;
+      opt.textContent = shape.label;
+      if (shape.default) opt.selected = true;
+      shapeSelect.appendChild(opt);
+    });
+
     // Populate currency dropdown from cached prices (sorted, USD first)
     const currencySelect = document.getElementById('currency');
     const firstPart = Object.values(prices.prices)[0];
@@ -555,10 +567,10 @@ len(xlsx_files)
       if (selectedClusters.length > 0) {
         argv.push('--cluster', ...selectedClusters);
       }
-      if (document.getElementById('shape').value === 'e6') {
-        argv.push('--ocpu-part', 'B111129', '--memory-part', 'B111130');
-      } else if (document.getElementById('shape').value === 'e6ax') {
-        argv.push('--ocpu-part', 'B112530', '--memory-part', 'B112531');
+      const shapeId = document.getElementById('shape').value;
+      const parts = (window.shapeParts || {})[shapeId];
+      if (parts) {
+        argv.push('--ocpu-part', parts.ocpu, '--memory-part', parts.memory);
       }
       if (document.getElementById('include-off-vms').checked)   argv.push('--include-poweredoff-vms');
       if (!document.getElementById('include-off-disks').checked) argv.push('--exclude-poweredoff-disks');
