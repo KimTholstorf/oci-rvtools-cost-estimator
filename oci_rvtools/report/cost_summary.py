@@ -149,7 +149,12 @@ def write_cost_summary(
     use_vd_sums = vm_df is not None and not vm_df.empty
     vd_end = columns.vd_data_end(len(vm_df)) if use_vd_sums else None
 
-    # Part Qty for OCPU/RAM/Storage is the SUM of the corresponding VM Details column.
+    # Powered-off inclusion toggles decide whether the aggregate covers all VMs
+    # (plain SUM) or only powered-on ones (SUMIF) — mirroring the per-VM cost cells.
+    include_vms_off = bool(metadata.get("powered_off_included"))
+    include_disks_off = bool(metadata.get("powered_off_disks_included"))
+
+    # Part Qty for OCPU/RAM/Storage sums the corresponding VM Details column.
     qty_column_keys = {"ocpu": "ocpu", "memory": "ram_gb"}
 
     def part_qty_formula(category: str, sheet_key: str, raw_quantity: float) -> str:
@@ -157,11 +162,13 @@ def write_cost_summary(
             return roundup_formula(raw_quantity)
         if category == "storage":
             key = "disk_prov_gb" if sheet_key == "total_disk" else "disk_used_gb"
+            include_off = include_disks_off
         else:
             key = qty_column_keys.get(category)
+            include_off = include_vms_off
         if key is None:
             return roundup_formula(raw_quantity)
-        return columns.vd_sum(key, vd_end)
+        return columns.vd_sum(key, vd_end) if include_off else columns.vd_sum_powered_on(key, vd_end)
 
     # Column widths
     for column, width in COLUMN_WIDTHS.items():

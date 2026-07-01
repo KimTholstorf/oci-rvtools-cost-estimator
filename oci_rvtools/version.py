@@ -4,4 +4,4 @@
 
 """Single source of truth for the package version (kept in sync with pyproject.toml)."""
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"

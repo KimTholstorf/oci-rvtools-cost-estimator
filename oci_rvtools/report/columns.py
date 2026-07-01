@@ -96,6 +96,22 @@ def vd_sum(key: str, end_row: int) -> str:
     return f"=SUM('{VM_DETAILS_SHEET}'!{letter}{VM_DETAILS_DATA_START}:{letter}{end_row})"
 
 
+def vd_sum_powered_on(key: str, end_row: int) -> str:
+    """SUM over a column's data rows, restricted to powered-on VMs.
+
+    e.g. ``=SUMIF('VM Details'!B3:B690,"poweredOn",'VM Details'!E3:E690)`` — used
+    when powered-off VMs are excluded, so the aggregate matches the per-VM cost
+    cells (which zero powered-off rows) and stays live if a powerstate is edited.
+    """
+    ps = col_letter("powerstate")
+    val = col_letter(key)
+    start = VM_DETAILS_DATA_START
+    return (
+        f'=SUMIF(\'{VM_DETAILS_SHEET}\'!{ps}{start}:{ps}{end_row},"poweredOn",'
+        f"'{VM_DETAILS_SHEET}'!{val}{start}:{val}{end_row})"
+    )
+
+
 def vd_data_end(n_rows: int) -> int:
     """Last data row for ``n_rows`` VMs."""
     return VM_DETAILS_DATA_START - 1 + n_rows
