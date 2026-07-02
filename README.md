@@ -170,6 +170,8 @@ Per-VM quantities are rounded up to whole units. Block Volume Performance Units 
 | `--list` | Print all Datacenter and Cluster names found in the input file(s) and exit. |
 | `--datacenter NAME [NAME ...]` | Only include VMs in the given Datacenter(s). Quote names with spaces e.g. `"DC East"`. |
 | `--cluster NAME [NAME ...]` | Only include VMs in the given Cluster(s). Quote names with spaces e.g. `"Production-01"`. |
+| `--anonymize` | Write an anonymized copy of each input and exit (no pricing). Keeps only `vInfo`+`vCPU`, stripped to the sizing/OS columns, with DNS and VM-name domains removed. VM/cluster/datacenter names are kept real. |
+| `--anonymize-full` | Everything `--anonymize` does, plus replace VM, hostname, cluster and datacenter names with tokens and emit a `<name>_anonymized_key.csv` mapping back to the originals. Mutually exclusive with `--anonymize`. |
 
 Paths can point to folders and the script recursively picks up `.xlsx` files.
 
@@ -221,7 +223,37 @@ oci-rvtools \
 oci-rvtools \
   --rvtools ./customer/RVTools_export_all.xlsx \
   --vpu 30   # Ultra High Performance is VPU 30-120.
+
+# Anonymize an export before sharing (keeps real names, strips everything else)
+oci-rvtools \
+  --rvtools ./customer/RVTools_export_all.xlsx \
+  --anonymize
+
+# Fully anonymize (tokenise VM/host/cluster/datacenter names + write a key file)
+oci-rvtools \
+  --rvtools ./customer/RVTools_export_all.xlsx \
+  --anonymize-full
 ```
+
+---
+
+## 🕵️ Anonymizing exports before sharing
+
+If a customer is reluctant to share a full RVTools export, `--anonymize` / `--anonymize-full`
+produce a slimmed-down copy (`<name>_anonymized.xlsx`) that still calculates to the **exact same
+cost**, but contains only what the tool needs:
+
+- Only the `vInfo` and `vCPU` sheets are kept; every other sheet is dropped.
+- `vInfo` is reduced to the VM sizing + OS-detection columns (plus VM, Cluster, Datacenter and a
+  domain-stripped DNS Name); `vCPU` is reduced to VM + the OS columns. IP addresses, UUIDs, folder
+  paths, annotations, network details, etc. are removed.
+- DNS names and any domain embedded in VM names are reduced to their short hostname
+  (`server.corp.local` → `server`).
+
+`--anonymize-full` additionally replaces VM, hostname, cluster and datacenter names with tokens
+(`VM0001`, `host0001`, `cluster01`, `dc01`) and writes a `<name>_anonymized_key.csv` mapping the
+tokens back to the originals, so the anonymized results can be translated back later. Housekeeping
+`vCLS` VMs keep their prefix so cost totals stay identical to the original file.
 
 ---
 

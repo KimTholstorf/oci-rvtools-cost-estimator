@@ -65,6 +65,9 @@ from .compute import (
 # Pricing
 from .pricing import API_BASE, PricingClient
 
+# Anonymisation
+from .anonymize import anonymize_file, build_anonymized
+
 # Reporting
 from .report import write_output
 from .report.cost_summary import EXCEL_HEADERS, build_metadata_rows
@@ -94,6 +97,8 @@ __all__ = [
     "apply_vm_filter",
     "list_datacenters_and_clusters",
     "build_metadata_rows",
+    "anonymize_file",
+    "build_anonymized",
     "MIB_TO_GB",
     "API_BASE",
 ]

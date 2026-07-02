@@ -78,6 +78,23 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         dest="list_topology",
         help="List all Datacenter and Cluster names found in the input file(s) and exit.",
     )
+    anonymize_group = parser.add_mutually_exclusive_group()
+    anonymize_group.add_argument(
+        "--anonymize",
+        action="store_true",
+        default=False,
+        help="Write an anonymized copy of each input and exit (no pricing): keep only "
+             "vInfo+vCPU, strip to the sizing/OS columns, remove DNS and VM-name domains, "
+             "but keep VM/cluster/datacenter names real.",
+    )
+    anonymize_group.add_argument(
+        "--anonymize-full",
+        action="store_true",
+        default=False,
+        help="Write a fully-anonymized copy of each input and exit (no pricing): everything "
+             "--anonymize does, plus replace VM, hostname, cluster and datacenter names with "
+             "tokens and emit a <name>_anonymized_key.csv mapping back to the originals.",
+    )
     parser.add_argument(
         "--datacenter",
         nargs="+",
@@ -105,6 +122,18 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     if args.list_topology:
         list_datacenters_and_clusters(rvtools_files)
+        return 0
+
+    if args.anonymize or args.anonymize_full:
+        from .anonymize import anonymize_file
+        produced = 0
+        for f in rvtools_files:
+            if anonymize_file(f, anonymize_names=args.anonymize_full):
+                produced += 1
+        if not produced:
+            error("No files were anonymized (no vInfo sheet found in the input).")
+            return 1
+        print("[OK] Anonymized file(s) generated successfully.")
         return 0
 
     if args.datacenter:
