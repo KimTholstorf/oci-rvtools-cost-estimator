@@ -88,7 +88,8 @@ def write_vm_detail_sheet(
         prov_mib = float(pd.to_numeric(row_data["Provisioned MiB"], errors="coerce") or 0)
         used_mib = float(pd.to_numeric(row_data["In Use MiB"], errors="coerce") or 0)
 
-        eff_prov_mib = total_mib if total_mib > 0 else prov_mib
+        # Prefer "Provisioned MiB" (VMDK allocated size); fall back to Total disk capacity.
+        eff_prov_mib = prov_mib if prov_mib > 0 else total_mib
 
         ocpu_val = math.ceil(cpus / 2.0)
         ram_gb_val = math.ceil(mem_mib / 1024.0)

@@ -21,8 +21,10 @@ from .log import info, warn
 from .model import AggregatedUsage, LineItem
 from .pricing import PricingClient
 
-# RVTools reports disk in MiB; convert MiB -> TiB -> GB.
-MIB_TO_GB = 1024.0 / 953_674.0
+# RVTools reports disk in MiB (1 MiB = 1,048,576 bytes); convert to decimal GB
+# (1 GB = 1e9 bytes), the basis OCI block-volume pricing and the Oracle cost
+# estimator use. (The previous 1024/953674 factor was ~2.4% too high.)
+MIB_TO_GB = 1_048_576.0 / 1_000_000_000.0
 
 
 def aggregate_vinfo(
@@ -47,7 +49,10 @@ def aggregate_vinfo(
     disk_frame = df if include_disks_off else df[powered_mask]
     total_mib = pd.to_numeric(disk_frame["Total disk capacity MiB"], errors="coerce").fillna(0)
     prov_mib = pd.to_numeric(disk_frame["Provisioned MiB"], errors="coerce").fillna(0)
-    effective_prov = total_mib.where(total_mib > 0, prov_mib)
+    # "Provisioned MiB" is the VMDK allocated size (what OCI block volumes must be sized to);
+    # it is >= "Total disk capacity MiB" (guest-visible capacity), so prefer it and only fall
+    # back to Total disk capacity when Provisioned is missing.
+    effective_prov = prov_mib.where(prov_mib > 0, total_mib)
     used_mib = pd.to_numeric(disk_frame["In Use MiB"], errors="coerce").fillna(0)
 
     disk_total_gb = float(effective_prov.sum() * MIB_TO_GB)

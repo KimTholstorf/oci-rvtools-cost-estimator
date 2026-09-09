@@ -55,6 +55,17 @@ def test_provisioned_falls_back_when_total_zero():
     assert disk_total == 51200 * MIB_TO_GB
 
 
+def test_provisioned_prefers_provisioned_over_total_capacity():
+    # "Total disk capacity MiB" (10000) is smaller than "Provisioned MiB" (51200);
+    # OCI block volumes must be sized to the provisioned figure, so the larger one wins.
+    df = _vinfo([["web1", "poweredOn", "cl1", 2, 4096, 10000, 51200, 25600]])
+    _, _, disk_total, _, _, _ = aggregate_vinfo(df, include_vms_off=False, include_disks_off=True)
+    assert disk_total == 51200 * MIB_TO_GB
+    # sanity: used (25600) is below provisioned
+    _, _, _, disk_used, _, _ = aggregate_vinfo(df, include_vms_off=False, include_disks_off=True)
+    assert disk_used < disk_total
+
+
 def test_vcls_rows_are_dropped():
     df = _vinfo([
         ["vCLS-abc", "poweredOn", "cl1", 2, 2048, 1024, 1024, 512],
