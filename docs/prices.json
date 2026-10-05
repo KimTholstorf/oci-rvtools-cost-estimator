@@ -1,11 +1,11 @@
 {
-  "updated": "2026-09-28",
+  "updated": "2026-10-05",
   "prices": {
     "B97384": {
       "display_name": "Compute - Standard - E5 - OCPU",
       "currencies": {
         "AED": 0.11019,
-        "ARS": 45.368448,
+        "ARS": 45.728565,
         "AUD": 0.045,
         "BHD": 0.0114,
         "BRL": 0.157071,
@@ -60,7 +60,7 @@
       "display_name": "Compute - Standard - E5 - Memory",
       "currencies": {
         "AED": 0.007346,
-        "ARS": 3.0245632,
+        "ARS": 3.048571,
         "AUD": 0.003,
         "BHD": 0.00076,
         "BRL": 0.0104714,
@@ -115,7 +115,7 @@
       "display_name": "OCI - Compute - Standard - E6 - OCPU",
       "currencies": {
         "AED": 0.11019,
-        "ARS": 45.368448,
+        "ARS": 45.728565,
         "AUD": 0.045,
         "BHD": 0.0114,
         "BRL": 0.157071,
@@ -170,7 +170,7 @@
       "display_name": "OCI - Compute - Standard - E6 - Memory",
       "currencies": {
         "AED": 0.007346,
-        "ARS": 3.0245632,
+        "ARS": 3.048571,
         "AUD": 0.003,
         "BHD": 0.00076,
         "BRL": 0.0104714,
@@ -225,7 +225,7 @@
       "display_name": "OCI - Compute - Standard - E6 Ax - OCPU",
       "currencies": {
         "AED": 0.0506874,
-        "ARS": 20.86948608,
+        "ARS": 21.0351399,
         "AUD": 0.0207,
         "BHD": 0.005244,
         "BRL": 0.07225266,
@@ -280,7 +280,7 @@
       "display_name": "OCI - Compute - Standard - E6 Ax - Memory",
       "currencies": {
         "AED": 0.0396684,
-        "ARS": 16.33264128,
+        "ARS": 16.4622834,
         "AUD": 0.0162,
         "BHD": 0.004104,
         "BRL": 0.05654556,
@@ -335,7 +335,7 @@
       "display_name": "Storage - Block Volume - Storage",
       "currencies": {
         "AED": 0.0936615,
-        "ARS": 38.5631808,
+        "ARS": 38.86928025,
         "AUD": 0.03825,
         "BHD": 0.00969,
         "BRL": 0.13351035,
@@ -390,7 +390,7 @@
       "display_name": "Storage - Block Volume - Performance Units",
       "currencies": {
         "AED": 0.0062441,
-        "ARS": 2.57087872,
+        "ARS": 2.59128535,
         "AUD": 0.00255,
         "BHD": 0.000646,
         "BRL": 0.00890069,
